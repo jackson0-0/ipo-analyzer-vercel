@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import "./App.css";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 function App() {
   const [ipos, setIpos] = useState([] as any[]);
   const [selected, setSelected] = useState(null as any);
@@ -8,7 +10,7 @@ function App() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("http://localhost:8000/ipos")
+    fetch(`${API_URL}/ipos`)
       .then((res) => res.json())
       .then((data) => setIpos(data));
   }, []);
@@ -41,7 +43,7 @@ function App() {
     });
 
     const response = await fetch(
-      `http://localhost:8000/analyze/${ipo.name}?${params}`,
+      `${API_URL}/analyze/${ipo.name}?${params}`,
     );
     const data = await response.json();
 

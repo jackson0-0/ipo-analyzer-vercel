@@ -7,6 +7,7 @@ from app import models
 import httpx
 import json
 import os
+from datetime import date
 
 load_dotenv()
 
@@ -14,9 +15,11 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -29,7 +32,8 @@ def home():
 
 @app.get("/ipos")
 def get_ipos():
-    url = "https://api.nasdaq.com/api/ipo/calendar?date=2026-03"
+    today = date.today().strftime("%Y-%m")
+    url = f"https://api.nasdaq.com/api/ipo/calendar?date={today}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
     }
@@ -104,6 +108,3 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
     db.close()
 
     return result
-
-from mangum import Mangum
-handler = Mangum(app)
