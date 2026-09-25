@@ -15,8 +15,14 @@ function App() {
       .then((data) => setIpos(data));
   }, []);
 
+  const today = new Date();
+  const monthLabel = today.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   const days = [];
-  for (let i = 1; i <= 31; i++) {
+  for (let i = 1; i <= daysInMonth; i++) {
     days.push(i);
   }
 
@@ -69,7 +75,7 @@ function App() {
   return (
     <div className="container">
       <h1>IPO Analyzer</h1>
-      <p className="subtitle">March 2026</p>
+      <p className="subtitle">{monthLabel}</p>
 
       <div className="calendar">
         {days.map((day) => {
