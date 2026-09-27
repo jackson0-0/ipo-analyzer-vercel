@@ -8,6 +8,7 @@ from app.sec import get_filing
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.exc import IntegrityError
 import hashlib
+import logging
 import httpx
 import json
 import os
@@ -122,6 +123,10 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
                for quote in result["evidence"]):
             raise ValueError("Analysis quotes could not be verified against the filing")
     except (APIError, ValidationError, ValueError) as exc:
+        logging.getLogger(__name__).warning(
+            "SEC analysis failed: %s (API status: %s)",
+            type(exc).__name__, getattr(exc, "status_code", None),
+        )
         raise HTTPException(status_code=502, detail="Could not produce a verified filing analysis. Please retry.") from exc
 
     result["sec"] = {key: value for key, value in filing.items() if key != "excerpts"}
