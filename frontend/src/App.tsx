@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import "./App.css";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -8,6 +8,8 @@ function App() {
   const [selected, setSelected] = useState(null as any);
   const [analysis, setAnalysis] = useState(null as any);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const analysisRequest = useRef(0);
 
   useEffect(() => {
     fetch(`${API_URL}/ipos`)
@@ -38,9 +40,11 @@ function App() {
   }
 
   async function handleIpoClick(ipo: any) {
+    const request = ++analysisRequest.current;
     setSelected(ipo);
     setAnalysis(null);
     setLoading(true);
+    setError("");
 
     const params = new URLSearchParams({
       ticker: ipo.ticker,
@@ -48,13 +52,18 @@ function App() {
       status: ipo.status,
     });
 
-    const response = await fetch(
-      `${API_URL}/analyze/${ipo.name}?${params}`,
-    );
-    const data = await response.json();
-
-    setAnalysis(data);
-    setLoading(false);
+    try {
+      const response = await fetch(
+        `${API_URL}/analyze/${encodeURIComponent(ipo.name)}?${params}`,
+      );
+      if (!response.ok) throw new Error("Analysis unavailable. Please try again.");
+      const data = await response.json();
+      if (request === analysisRequest.current) setAnalysis(data);
+    } catch {
+      if (request === analysisRequest.current) setError("Analysis unavailable. Please try again.");
+    } finally {
+      if (request === analysisRequest.current) setLoading(false);
+    }
   }
 
   function getScoreColor(score: number) {
@@ -68,6 +77,7 @@ function App() {
   }
 
   function closeCard() {
+    analysisRequest.current++;
     setSelected(null);
     setAnalysis(null);
   }
@@ -112,23 +122,34 @@ function App() {
           <p>Expected Date: {selected.date}</p>
 
           {loading && <p>Running analysis, please wait...</p>}
+          {error && <p role="alert">{error}</p>}
 
           {analysis != null && (
             <div>
               <p
                 style={{
-                  color: getScoreColor(analysis.score),
+                  color: analysis.score == null ? "inherit" : getScoreColor(analysis.score),
                   fontWeight: "bold",
                   fontSize: "18px",
                 }}
               >
-                Score: {analysis.score} out of 10
+                {analysis.score == null ? "Not enough evidence to score" : `Score: ${analysis.score} out of 10`}
               </p>
               <p>{analysis.about}</p>
               <p>
                 <strong>Summary:</strong> {analysis.summary}
               </p>
               <p style={{ color: "red" }}>Risk: {analysis.red_flag}</p>
+              {analysis.sec?.url && (
+                <p><a href={analysis.sec.url} target="_blank" rel="noopener noreferrer">
+                  SEC {analysis.sec.form} · Filed {analysis.sec.filed}
+                </a></p>
+              )}
+              {analysis.evidence?.map((quote: string, index: number) => (
+                <blockquote key={index}>{quote}</blockquote>
+              ))}
+              <p>{analysis.limitations}</p>
+              {analysis.sec?.status === "available" && <p>{analysis.sec.note}</p>}
             </div>
           )}
         </div>

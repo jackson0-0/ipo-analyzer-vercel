@@ -12,7 +12,7 @@ def list_ipos() -> list:
 
 @mcp.tool()
 def analyze_ipo(company_name: str, ticker: str = "", amount: str = "", status: str = "") -> dict:
-    """Analyze an IPO and return a score, summary, and biggest risk"""
+    """Analyze SEC filing excerpts; return evidence, filing source, and a score when supported."""
     return analyze(company_name, ticker, amount, status)
 
 

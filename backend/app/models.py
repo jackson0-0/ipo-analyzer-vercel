@@ -13,3 +13,10 @@ class IPOAnalysis(Base):
     summary = Column(Text)
     red_flag = Column(Text)
     about = Column(Text)
+
+
+class SECAnalysis(Base):
+    __tablename__ = "sec_analysis"
+
+    cache_key = Column(String(64), primary_key=True)
+    response = Column(Text, nullable=False)
