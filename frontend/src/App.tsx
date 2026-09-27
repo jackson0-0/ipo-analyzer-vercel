@@ -145,6 +145,7 @@ function App() {
                   SEC {analysis.sec.form} · Filed {analysis.sec.filed}
                 </a></p>
               )}
+              {analysis.evidence?.length > 0 && <p><strong>Supporting SEC excerpts:</strong></p>}
               {analysis.evidence?.map((quote: string, index: number) => (
                 <blockquote key={index}>{quote}</blockquote>
               ))}

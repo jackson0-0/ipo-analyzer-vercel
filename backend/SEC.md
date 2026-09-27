@@ -18,8 +18,8 @@ requested IPO; the model is instructed to withhold a score when it cannot tell.
 
 The model receives up to 40,000 characters of selected filing excerpts, not the
 entire filing. Financial statements are read from filing text; the Company Facts
-XBRL API is not used. The response contains the SEC source, filing date, short
-quotes checked against the retrieved excerpts, and limitations. Exact quotes do
+XBRL API is not used. The response contains the SEC source, filing date, supporting
+passages selected by ID and copied directly from the retrieved excerpts, and limitations. Source passages do
 not independently validate all of the model's interpretation.
 
 If matching/download fails, no model call or score is produced. An invalid model

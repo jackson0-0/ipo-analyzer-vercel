@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.exc import IntegrityError
 import hashlib
 import logging
+import textwrap
 import httpx
 import json
 import os
@@ -75,7 +76,7 @@ class FilingJudgment(BaseModel):
     summary: str
     red_flag: str
     about: str
-    evidence: list[str] = Field(min_length=1, max_length=4)
+    evidence_ids: list[int] = Field(min_length=1, max_length=4)
     limitations: str
 
 
@@ -89,10 +90,13 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
 
     # A separate cache never reuses the old, ungrounded analyses. New filing,
     # changed excerpts, IPO inputs, or calendar day produces a fresh judgment.
+    passages = textwrap.wrap(filing["excerpts"], width=400, break_long_words=False, break_on_hyphens=False)
+    source = {key: value for key, value in filing.items() if key != "excerpts"}
     inputs = {"company": company_name, "ticker": ticker, "offer_amount": amount,
-              "status": status, "filing": filing, "as_of": date.today().isoformat()}
+              "status": status, "filing": source, "as_of": date.today().isoformat(),
+              "passages": [{"id": i + 1, "text": text} for i, text in enumerate(passages)]}
     payload = json.dumps(inputs, sort_keys=True)
-    cache_key = hashlib.sha256(("sec-v2:" + payload).encode()).hexdigest()
+    cache_key = hashlib.sha256(("sec-v3:" + payload).encode()).hexdigest()
     with SessionLocal() as db:
         cached = db.get(models.SECAnalysis, cache_key)
         if cached:
@@ -114,7 +118,7 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
                     "Do not assume omitted information is absent from the full filing. "
                     "Use submit_judgment with score (integer 1-10, higher means stronger fundamentals, or null "
                     "if evidence is insufficient or the offering does not match), summary, red_flag, about, "
-                    "evidence (1-4 short verbatim quotes from the excerpts, each at most 300 characters), "
+                    "evidence_ids (1-4 IDs of the supplied passages supporting your judgment; never invent IDs), "
                     "and limitations (missing information, preliminary terms, age and partial coverage). "
                     "The score is a qualitative assessment, not a return prediction or a buy/sell recommendation."),
             messages=[{"role": "user", "content": payload}],
@@ -122,10 +126,11 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
         submitted = next((block.input for block in response.content
                           if block.type == "tool_use" and block.name == "submit_judgment"), None)
         result = FilingJudgment.model_validate(submitted).model_dump()
-        normalized = " ".join(filing["excerpts"].split())
-        if any(not quote.strip() or len(quote) > 300 or " ".join(quote.split()) not in normalized
-               for quote in result["evidence"]):
-            raise ValueError("Analysis quotes could not be verified against the filing")
+        evidence_ids = result.pop("evidence_ids")
+        if any(not 1 <= index <= len(passages) for index in evidence_ids):
+            raise ValueError("Analysis referenced an unknown SEC passage")
+        # Display the actual source text, never a model-rewritten quotation.
+        result["evidence"] = [passages[index - 1] for index in dict.fromkeys(evidence_ids)]
     except (APIError, ValidationError, ValueError) as exc:
         logging.getLogger(__name__).warning(
             "SEC analysis failed: %s (API status: %s)",
@@ -136,7 +141,7 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
                 [(e["loc"], e["type"]) for e in exc.errors(include_input=False)])
         raise HTTPException(status_code=502, detail="Could not produce a verified filing analysis. Please retry.") from exc
 
-    result["sec"] = {key: value for key, value in filing.items() if key != "excerpts"}
+    result["sec"] = source
     with SessionLocal() as db:
         db.add(models.SECAnalysis(cache_key=cache_key, response=json.dumps(result)))
         try:
