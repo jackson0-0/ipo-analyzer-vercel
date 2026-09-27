@@ -89,7 +89,7 @@ class SecTests(unittest.TestCase):
                 'accession':'one','excerpts':'We have a net loss.','note':'Partial excerpts'}
         judgment={'score':4,'summary':'Loss-making','red_flag':'Losses','about':'Example',
                   'evidence':['We have a net loss.'],'limitations':'Partial excerpts'}
-        response=SimpleNamespace(content=[SimpleNamespace(type='text',text=json.dumps(judgment))])
+        response=SimpleNamespace(content=[SimpleNamespace(type='tool_use',name='submit_judgment',input=judgment)])
         with patch.object(main,'get_filing',return_value=filing), \
              patch.object(main.client.messages,'create',return_value=response) as create:
             first=main.analyze('Example Inc.')
@@ -105,7 +105,7 @@ class SecTests(unittest.TestCase):
         from types import SimpleNamespace
         judgment={'score':8,'summary':'Growth','red_flag':'None','about':'Example',
                   'evidence':['Revenue doubled.'],'limitations':'None'}
-        response=SimpleNamespace(content=[SimpleNamespace(type='text',text=json.dumps(judgment))])
+        response=SimpleNamespace(content=[SimpleNamespace(type='tool_use',name='submit_judgment',input=judgment)])
         with patch.object(main,'get_filing',return_value={'status':'available','excerpts':'We have a net loss.'}), \
              patch.object(main.client.messages,'create',return_value=response):
             with self.assertRaises(main.HTTPException) as raised:
