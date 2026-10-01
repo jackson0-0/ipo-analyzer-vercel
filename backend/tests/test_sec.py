@@ -8,7 +8,7 @@ os.environ['DATABASE_URL'] = 'sqlite://'
 os.environ['ANTHROPIC_API_KEY'] = 'test-key'
 from app import sec, main
 from app.database import SessionLocal
-from app.models import SECAnalysis, IPOAnalysis
+from app.models import SECAnalysis, IPOAnalysis, IssuerIdentity
 
 
 class SecTests(unittest.TestCase):
@@ -17,6 +17,7 @@ class SecTests(unittest.TestCase):
         sec._directory.cache_clear()
         sec._tickers.cache_clear()
         with SessionLocal() as db:
+            db.query(IssuerIdentity).delete()
             db.query(SECAnalysis).delete()
             db.query(IPOAnalysis).delete()
             db.commit()

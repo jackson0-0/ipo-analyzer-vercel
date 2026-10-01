@@ -108,9 +108,16 @@ def _filing(company_name, ticker, bucket):
     target = _name(company_name)
     if not target:
         raise ValueError("A company name is required")
-    candidates = set()
+    from app.database import SessionLocal
+    from app.models import IssuerIdentity
+    from app.collection import now
+    from sqlalchemy.exc import IntegrityError
+    with SessionLocal() as db:
+        identity = db.get(IssuerIdentity, target)
+        saved_cik = int(identity.cik) if identity else None
+    candidates = {saved_cik} if saved_cik else set()
     # Ticker matches still require a matching company name, preventing collisions.
-    tickers = _tickers(date.today().isoformat())
+    tickers = {} if saved_cik else _tickers(date.today().isoformat())
     for row in tickers.values():
         if _name(row["title"]) == target:
             candidates.add(int(row["cik_str"]))
@@ -120,8 +127,19 @@ def _filing(company_name, ticker, bucket):
         raise ValueError("No unique SEC company match; no filing-based score is available")
     cik = next(iter(candidates))
     data = json.loads(_get(f"https://data.sec.gov/submissions/CIK{cik:010d}.json"))
-    if _name(data["name"]) != target:
+    verified_names = {_name(data["name"])} | {_name(row.get("name", "")) for row in data.get("formerNames", [])}
+    if target not in verified_names:
         raise ValueError("SEC issuer name differs from the requested company")
+    with SessionLocal() as db:
+        row = db.get(IssuerIdentity, target)
+        if row is None:
+            row = IssuerIdentity(name_key=target)
+            db.add(row)
+        row.cik, row.sec_name, row.verified_at = str(cik), data["name"], now()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
     cutoff = (date.today() - timedelta(days=730)).isoformat()
     recent = data["filings"]["recent"]
     filings = [dict(zip(recent, values)) for values in zip(*recent.values())]

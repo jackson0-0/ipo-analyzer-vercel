@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock, patch
 import httpx
 from fastapi import HTTPException
-from app.main import get_ipos
+from app.main import fetch_ipos as get_ipos
 
 class CalendarTests(unittest.TestCase):
     @patch('app.main.httpx.get')

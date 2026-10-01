@@ -36,3 +36,27 @@ Test from the repository root:
 Official documentation:
 https://www.sec.gov/search-filings/edgar-application-programming-interfaces
 https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data
+
+## Durable collection and reported facts
+
+The API lifespan refreshes the last 12 calendar months at startup and hourly while
+this Railway worker is running. Each successful response is stored in
+`calendar_snapshots`; `/calendar?month=YYYY-MM` returns rows, UTC `updated_at`,
+`stale`, and `refresh_failed`. `/ipos` remains a list for MCP compatibility.
+Requests reuse snapshots for one hour; failed refreshes retain the last successful
+snapshot. No snapshot plus an upstream failure returns 502, not an empty calendar.
+This uses the existing database and requires no new environment variables.
+
+Verified name-to-CIK mappings are stored in `issuer_identities`. Each new filing
+lookup uses that CIK and verifies the submissions current/former names. Ambiguous
+or mismatched names are rejected; tickers alone never establish identity.
+
+`reported_facts` stores original numeric SEC Company Facts values separately from
+AI analyses, with tag, unit, reporting period, accession, and filing link. Only
+values matching the selected filing accession are accepted; no values are inferred,
+summed, or filled with zero. The initial implementation covers common US-GAAP
+revenue, net income/loss, cash flow, cash, and current/noncurrent long-term debt
+concepts. It does not cover every debt type, IFRS, custom tags, or unstructured
+prospectus tables. Many new IPO filings have no Company Facts coverage. The UI
+shows that limitation and still permits clearly labeled excerpt-based AI judgment.
+Offering amounts remain separately labeled Nasdaq data; they are not valuations.
