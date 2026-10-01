@@ -103,6 +103,16 @@ class SecTests(unittest.TestCase):
             main.analyze('Example Inc.')
             self.assertEqual(create.call_count,2)
 
+    def test_serialized_bullet_arrays_are_normalized(self):
+        value = main.FilingJudgment.model_validate({
+            'score': None, 'summary': 'Limited evidence', 'red_flag': 'Unknown',
+            'about': 'Example', 'evidence_ids': [1], 'limitations': 'Partial filing',
+            'highlights': '["Revenue disclosed", "Operating losses"]',
+            'risks': '- Operating losses', 'gaps': ['Cash runway'],
+            'score_reason': 'Missing cash flow evidence'})
+        self.assertEqual(value.highlights, ['Revenue disclosed', 'Operating losses'])
+        self.assertEqual(value.risks, ['Operating losses'])
+
     def test_invented_passage_id_is_rejected(self):
         from types import SimpleNamespace
         judgment={'score':8,'summary':'Growth','red_flag':'None','about':'Example',

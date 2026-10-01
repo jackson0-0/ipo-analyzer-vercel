@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from app.database import engine, SessionLocal
 from app import models
 from app.sec import get_filing
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.exc import IntegrityError
 import hashlib
 import logging
@@ -116,6 +116,21 @@ class FilingJudgment(BaseModel):
     risks: list[str] = Field(min_length=1, max_length=5)
     gaps: list[str] = Field(min_length=1, max_length=5)
     score_reason: str = Field(min_length=1)
+
+    @field_validator("highlights", "risks", "gaps", mode="before")
+    @classmethod
+    def normalize_bullets(cls, value):
+        # Some tool responses serialize arrays as JSON strings.
+        if isinstance(value, str):
+            try:
+                decoded = json.loads(value)
+            except ValueError:
+                decoded = None
+            if isinstance(decoded, list):
+                return decoded
+            return [line.strip().lstrip("•- ") for line in value.splitlines() if line.strip()]
+        return value
+
 
 
 @app.get("/analyze/{company_name}")
