@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 import hashlib
 import logging
 import textwrap
+import re
 import httpx
 import json
 import os
@@ -128,7 +129,10 @@ class FilingJudgment(BaseModel):
                 decoded = None
             if isinstance(decoded, list):
                 return decoded
-            return [line.strip().lstrip("•- ") for line in value.splitlines() if line.strip()]
+            points = [line.strip().lstrip("•- ") for line in value.splitlines() if line.strip()]
+            if len(points) == 1:
+                points = re.split(r"(?<=[.!?])\s+(?=[A-Z])", points[0])
+            return points[:4] + [" ".join(points[4:])] if len(points) > 5 else points
         return value
 
 
@@ -154,7 +158,7 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
               "reported_facts": reported_facts,
               "passages": [{"id": i + 1, "text": text} for i, text in enumerate(passages)]}
     payload = json.dumps(inputs, sort_keys=True)
-    cache_key = hashlib.sha256(("sec-v5-bullets:" + payload).encode()).hexdigest()
+    cache_key = hashlib.sha256(("sec-v6-bullets:" + payload).encode()).hexdigest()
     with SessionLocal() as db:
         cached = db.get(models.SECAnalysis, cache_key)
         if cached:
@@ -185,7 +189,7 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
                     "one distinct point per bullet, at most two short sentences. Do not add Markdown bullet markers. "
                     "Use only supported claims; gaps describe unavailable information, not assumed problems. "
                     "Keep summary and about to two short sentences each. "
-                    "Provide score_reason explaining the score or the specific evidence missing for a null score. "
+                    "Keep score_reason to at most two short sentences, explaining the score or the specific evidence missing for a null score. "
                     "The score is a qualitative assessment, not a return prediction or a buy/sell recommendation."),
             messages=[{"role": "user", "content": payload}],
         )
