@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from anthropic import Anthropic, APIError
 from dotenv import load_dotenv
@@ -37,39 +37,32 @@ def home():
     return {"message": "IPO Analyzer is running"}
 
 @app.get("/ipos")
-def get_ipos():
-    today = date.today().strftime("%Y-%m")
-    url = f"https://api.nasdaq.com/api/ipo/calendar?date={today}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-    }
+def get_ipos(month: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")):
+    requested = month or date.today().strftime("%Y-%m")
+    url = f"https://api.nasdaq.com/api/ipo/calendar?date={requested}"
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+    try:
+        response = httpx.get(url, headers=headers, timeout=20)
+        response.raise_for_status()
+        data = response.json().get("data")
+        if not isinstance(data, dict):
+            raise ValueError("Missing calendar data")
+        upcoming = ((data.get("upcoming") or {}).get("upcomingTable") or {}).get("rows") or []
+        priced = (data.get("priced") or {}).get("rows") or []
+        ipos = []
+        for rows, status, date_field in [(upcoming, "upcoming", "expectedPriceDate"), (priced, "priced", "pricedDate")]:
+            for ipo in rows:
+                ipos.append({
+                    "name": ipo.get("companyName") or "Unnamed company",
+                    "ticker": ipo.get("proposedTickerSymbol") or "",
+                    "date": ipo.get(date_field) or "",
+                    "amount": ipo.get("dollarValueOfSharesOffered") or "",
+                    "status": status,
+                })
+        return ipos
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=502, detail="IPO calendar is temporarily unavailable.") from exc
 
-    response = httpx.get(url, headers=headers)
-    data = response.json()
-
-    ipos = []
-
-    upcoming = data["data"]["upcoming"]["upcomingTable"]["rows"]
-    for ipo in upcoming:
-        ipos.append({
-            "name": ipo["companyName"],
-            "ticker": ipo["proposedTickerSymbol"],
-            "date": ipo["expectedPriceDate"],
-            "amount": ipo["dollarValueOfSharesOffered"],
-            "status": "upcoming"
-        })
-
-    priced = data["data"]["priced"]["rows"]
-    for ipo in priced:
-        ipos.append({
-            "name": ipo["companyName"],
-            "ticker": ipo["proposedTickerSymbol"],
-            "date": ipo["pricedDate"],
-            "amount": ipo["dollarValueOfSharesOffered"],
-            "status": "priced"
-        })
-
-    return ipos
 
 class FilingJudgment(BaseModel):
     score: int | None = Field(default=None, ge=1, le=10, strict=True)
