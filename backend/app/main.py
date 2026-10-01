@@ -158,7 +158,7 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
               "reported_facts": reported_facts,
               "passages": [{"id": i + 1, "text": text} for i, text in enumerate(passages)]}
     payload = json.dumps(inputs, sort_keys=True)
-    cache_key = hashlib.sha256(("sec-v6-bullets:" + payload).encode()).hexdigest()
+    cache_key = hashlib.sha256(("sec-v7-plain-language:" + payload).encode()).hexdigest()
     with SessionLocal() as db:
         cached = db.get(models.SECAnalysis, cache_key)
         if cached:
@@ -185,11 +185,24 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
                     "if evidence is insufficient or the offering does not match), summary, red_flag, about, "
                     "evidence_ids (1-4 IDs of the supplied passages supporting your judgment; never invent IDs), "
                     "and limitations (missing information, preliminary terms, age and partial coverage). "
-                    "Also return highlights, risks, and gaps as arrays of 1-5 concise plain-text bullets each, "
-                    "one distinct point per bullet, at most two short sentences. Do not add Markdown bullet markers. "
-                    "Use only supported claims; gaps describe unavailable information, not assumed problems. "
+                    "WRITING RULES: Write for a first-time investor, not an analyst. Use plain, natural English. "
+                    "Return highlights, risks, and gaps as actual JSON arrays of 1-5 strings. "
+                    "Each bullet must contain ONE point in ONE short sentence, ideally under 25 words. "
+                    "No semicolon chains, no nested lists, no Markdown markers, no promotional language. "
+                    "Put the most useful point first; do not repeat the same claim across sections. "
+                    "Explain unfamiliar terms briefly: dilution means existing shares represent a smaller ownership stake; "
+                    "redemption means an eligible investor can ask for their money back under the filing's conditions. "
+                    "Never call redemption guaranteed downside protection. Never infer a dilution percentage simply "
+                    "by comparing the sponsor purchase price with the public offering price. Only use a dilution "
+                    "figure when the source states its definition and basis clearly. "
+                    "Avoid phrases like capital detention, tax leakage, governance framework, insider commitment, "
+                    "or capital-destroying acquisitions. State the concrete fact and why it matters. "
+                    "Do not infer management competence or commitment from underwriting or funding arrangements. "
+                    "Gaps must distinguish not covered in the excerpts from not existing. "
                     "Keep summary and about to two short sentences each. "
-                    "Keep score_reason to at most two short sentences, explaining the score or the specific evidence missing for a null score. "
+                    "score_reason is the main headline explanation: at most 40 words in one or two complete "
+                    "sentences, focusing on the main reason for the score, not a list of all risks. "
+                    "For null scores, explain exactly why without demanding evidence irrelevant to the company type. "
                     "The score is a qualitative assessment, not a return prediction or a buy/sell recommendation."),
             messages=[{"role": "user", "content": payload}],
         )
