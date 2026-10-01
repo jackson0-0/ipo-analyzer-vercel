@@ -89,7 +89,7 @@ class SecTests(unittest.TestCase):
         filing={'status':'available','url':'https://www.sec.gov/Archives/test.htm',
                 'accession':'one','excerpts':'We have a net loss.','note':'Partial excerpts'}
         judgment={'score':4,'summary':'Loss-making','red_flag':'Losses','about':'Example',
-                  'evidence_ids':[1],'limitations':'Partial excerpts'}
+                  'evidence_ids':[1],'limitations':'Partial excerpts','highlights':['Loss-making'], 'risks':['Losses'], 'gaps':['Partial excerpts'], 'score_reason':'Disclosed losses'}
         response=SimpleNamespace(content=[SimpleNamespace(type='tool_use',name='submit_judgment',input=judgment)])
         with patch.object(main,'get_filing',return_value=filing), \
              patch.object(main.client.messages,'create',return_value=response) as create:
@@ -106,7 +106,7 @@ class SecTests(unittest.TestCase):
     def test_invented_passage_id_is_rejected(self):
         from types import SimpleNamespace
         judgment={'score':8,'summary':'Growth','red_flag':'None','about':'Example',
-                  'evidence_ids':[999],'limitations':'None'}
+                  'evidence_ids':[999],'limitations':'None','highlights':['Growth'],'risks':['Unknown'],'gaps':['Unknown'],'score_reason':'Test'}
         response=SimpleNamespace(content=[SimpleNamespace(type='tool_use',name='submit_judgment',input=judgment)])
         with patch.object(main,'get_filing',return_value={'status':'available','excerpts':'We have a net loss.'}), \
              patch.object(main.client.messages,'create',return_value=response):

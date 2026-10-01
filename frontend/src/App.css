@@ -5,3 +5,5 @@
 @media(pointer:coarse){button{min-height:44px}}
 
 .freshness{font-size:11px;color:var(--muted);margin:12px 0}.reported-facts{border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:20px}.reported-fact{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}.reported-fact strong{font-size:12px;font-weight:500}.reported-fact p{font-size:11px;color:var(--muted);margin:3px 0}
+
+.analysis-bullets{padding-left:20px;margin:8px 0 20px}.analysis-bullets li{padding-left:3px;margin:8px 0}.score-reason{color:var(--muted);font-size:12px;line-height:1.65}
