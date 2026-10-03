@@ -156,13 +156,13 @@ export async function quoteFor(env,ticker,company,status,offerPrice='',listingDa
   const key='quote-v2:'+JSON.stringify([ticker,normalizeName(company),offerPrice,listingDate]);
   const hit=await cached(env,key);if(hit)return hit;
   try {
-    const payload=JSON.parse(await checkedFetch(`https://api.nasdaq.com/api/quote/${encodeURIComponent(ticker)}/info?assetclass=stocks`,{headers:{'User-Agent':'Mozilla/5.0'}}));
+    const payload=JSON.parse(await checkedFetch(`https://api.nasdaq.com/api/quote/${encodeURIComponent(ticker)}/info?assetclass=stocks`,{headers:{'User-Agent':'Mozilla/5.0'},timeout:6000}));
     const quote=parseQuote(payload.data,ticker,company);
     try{
       const historyKey='history:'+ticker;let rows=await cached(env,historyKey);
       if(!rows){
         const from=new Date(Date.now()-45*86400000).toISOString().slice(0,10),to=now().slice(0,10);
-        const history=JSON.parse(await checkedFetch(`https://api.nasdaq.com/api/quote/${encodeURIComponent(ticker)}/historical?assetclass=stocks&fromdate=${from}&todate=${to}&limit=100`,{headers:{'User-Agent':'Mozilla/5.0'}}));
+        const history=JSON.parse(await checkedFetch(`https://api.nasdaq.com/api/quote/${encodeURIComponent(ticker)}/historical?assetclass=stocks&fromdate=${from}&todate=${to}&limit=100`,{headers:{'User-Agent':'Mozilla/5.0'},timeout:6000}));
         rows=await save(env,historyKey,historyRows(history.data,ticker),3600);
       }
       quote.changes=priceChanges(rows,offerPrice,listingDate);
@@ -171,7 +171,7 @@ export async function quoteFor(env,ticker,company,status,offerPrice='',listingDa
   }catch{return await save(env,key,{status:'unavailable',price:null,fetched_at:now()},300);}
 }
 export async function refreshBackground(env){
-  // One company per tick keeps the job within Worker and upstream request limits.
+  // Bound price work separately from the single AI research job.
   const snapshots=await env.DB.prepare('SELECT month,response FROM calendar_snapshots ORDER BY month DESC LIMIT 12').all();
   const jobs=await env.DB.prepare('SELECT key,next_at FROM research_jobs').all();
   const due=new Map(jobs.results.map(j=>[j.key,j.next_at]));
@@ -179,7 +179,13 @@ export async function refreshBackground(env){
   const unique=[...new Map(candidates.map(i=>[researchKey(i.name,i.ticker,i.amount||'',i.status),i])).entries()];
   // Rotate quotes separately so price refreshes do not depend on the AI budget.
   const cursor=await cached(env,'quote-cursor')||0;
-  if(unique.length){const ipo=unique[cursor%unique.length][1];await quoteFor(env,ipo.ticker,ipo.name,ipo.status,ipo.offer_price||'',ipo.date);await save(env,'quote-cursor',(cursor+1)%unique.length,86400);}
+  const tradable=unique.map(([,ipo])=>ipo).filter(ipo=>ipo.status!=='upcoming');
+  if(tradable.length){
+    const count=Math.min(10,tradable.length);
+    const queue=Array.from({length:count},(_,i)=>tradable[(cursor+i)%tradable.length]);
+    await Promise.all(Array.from({length:2},async()=>{while(queue.length){const ipo=queue.shift();await quoteFor(env,ipo.ticker,ipo.name,ipo.status,ipo.offer_price||'',ipo.date);}}));
+    await save(env,'quote-cursor',(cursor+count)%tradable.length,86400);
+  }
   const job=unique.find(([key])=>(due.get(key)||0)<=Date.now());if(!job)return;
   const [key,ipo]=job;
   const lease=await one(env,"INSERT INTO research_jobs VALUES (?,?,'running') ON CONFLICT(key) DO UPDATE SET next_at=excluded.next_at,status='running' WHERE research_jobs.next_at<=? RETURNING key",key,Date.now()+600000,Date.now());
@@ -196,7 +202,7 @@ export async function refreshBackground(env){
   }
 }
 export default {
-  async fetch(request,env) {
+  async fetch(request,env,ctx) {
     const url=new URL(request.url),path=url.pathname;
     if(!path.startsWith('/api/')) return env.ASSETS.fetch(request);
     if(request.method!=='GET') return json({detail:'Method not allowed'},405);
@@ -222,7 +228,15 @@ export default {
       if(path.startsWith('/api/quote/')) {
         const ticker=decodeURIComponent(path.slice('/api/quote/'.length)).toUpperCase(),company=url.searchParams.get('company')||'';
         if(!/^[A-Z0-9.^-]{1,15}$/.test(ticker)||!company||company.length>300)return json({detail:'Invalid quote request'},422);
-        return json(await quoteFor(env,ticker,company,url.searchParams.get('status')||'',url.searchParams.get('offer_price')||'',url.searchParams.get('date')||''));
+        const status=url.searchParams.get('status')||'',offer=url.searchParams.get('offer_price')||'',date=url.searchParams.get('date')||'';
+        const key='quote-v2:'+JSON.stringify([ticker,normalizeName(company),offer,date]);
+        const saved=await one(env,'SELECT response,expires_at FROM worker_cache WHERE key=?',key);
+        if(ctx && status!=='upcoming' && saved && saved.expires_at>Date.now()-86400000){
+          const stale=saved.expires_at<=Date.now();
+          if(stale)ctx.waitUntil(quoteFor(env,ticker,company,status,offer,date));
+          return json({...JSON.parse(saved.response),stale});
+        }
+        return json(await quoteFor(env,ticker,company,status,offer,date));
       }
       if(path.startsWith('/api/analyze/')) {
         const company=decodeURIComponent(path.slice('/api/analyze/'.length));

@@ -117,3 +117,12 @@ test('Calendar includes saved price colors without requesting upstream quotes',a
   assert.equal(quote.changes.items[0].percent,10);assert.equal(quote.stale,true);
  }finally{globalThis.fetch=original;}
 });
+test('Expired saved quotes return before upstream refresh completes',async()=>{
+ const e=env(),original=globalThis.fetch,pending=[];let release;
+ e.db.prepare('INSERT INTO worker_cache VALUES (?,?,?)').run('quote-v2:'+JSON.stringify(['EX',normalizeName('Example Inc'),'10','9/20/2026']),JSON.stringify({status:'available',price:'$11'}),Date.now()-1000);
+ globalThis.fetch=()=>new Promise(resolve=>{release=()=>resolve(Response.json({}, {status:503}));});
+ try {
+  const response=await worker.fetch(new Request('https://example.com/api/quote/EX?company=Example%20Inc&status=priced&offer_price=10&date=9%2F20%2F2026'),e,{waitUntil(p){pending.push(p);}});
+  const quote=await response.json();assert.equal(quote.price,'$11');assert.equal(quote.stale,true);assert.equal(pending.length,1);
+ }finally{release?.();await Promise.all(pending);globalThis.fetch=original;}
+});
