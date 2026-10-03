@@ -1,0 +1,1 @@
+{"name":"ipo-analyzer-cloudflare","private":true,"type":"module","scripts":{"test":"node --test","build":"npm --prefix ../frontend run build -- --base=/","deploy":"VITE_API_URL=/api npm run build && wrangler deploy","dev":"wrangler dev"},"dependencies":{"htmlparser2":"10.0.0"},"devDependencies":{"wrangler":"4.147.0"}}

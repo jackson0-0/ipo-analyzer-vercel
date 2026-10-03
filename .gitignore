@@ -15,3 +15,6 @@ dist/
 
 # mac
 .DS_Store
+.wrangler/
+.dev.vars
+cloudflare/.migration/
