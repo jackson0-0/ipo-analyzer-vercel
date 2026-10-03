@@ -111,7 +111,7 @@ export async function reserveResearchBudget(env){
 export async function analyze(env,company,ticker,amount,status,background=false) {
   const requestKey=researchKey(company,ticker,amount,status);
   const filing=await filingFor(env,company);
-  if(filing.status!=='available') return {score:null,summary:'Insufficient SEC evidence to judge this IPO.',red_flag:'Company financials and risks have not been verified against SEC filings.',about:'',evidence:[],limitations:filing.note,sec:filing,highlights:[],risks:[],gaps:[filing.note],score_reason:filing.note};
+  if(filing.status!=='available') { const result={score:null,summary:'Insufficient SEC evidence to judge this IPO.',red_flag:'Company financials and risks have not been verified against SEC filings.',about:'',evidence:[],limitations:filing.note,sec:filing,highlights:[],risks:[],gaps:[filing.note],score_reason:filing.note}; await indexAnalysis(env,requestKey,result); return result; }
   const reported_facts=await factsFor(env,filing),passages=passagesFor(filing.excerpts);
   const {excerpts:unused,...source}=filing;
   const inputs={company,ticker,offer_amount:amount,status,filing:source,reported_facts,passages:passages.map((text,i)=>({id:i+1,text}))};
@@ -243,7 +243,7 @@ export default {
         if(!company||company.length>300) return json({detail:'Invalid company name'},422);
         const args=['ticker','amount','status'].map(k=>url.searchParams.get(k)||'');
         const saved=await one(env,'SELECT * FROM analysis_index WHERE key=?',researchKey(company,...args));
-        if(saved)return json({...JSON.parse(saved.response),analysis_updated_at:saved.updated_at,analysis_checked_at:saved.checked_at});
+        if(saved){const result=JSON.parse(saved.response); if(result.sec?.status==='available'||Date.now()-Date.parse(saved.checked_at)<21600000)return json({...result,analysis_updated_at:saved.updated_at,analysis_checked_at:saved.checked_at});}
         return json(await analyze(env,company,...args));
       }
       return json({detail:'Not found'},404);
@@ -260,6 +260,7 @@ export default {
       const month=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-offset,1)).toISOString().slice(0,7);
       try { const result=await calendar(env,month,true); if(result.refresh_failed) console.warn('Calendar refresh failed',month); } catch { console.warn('Calendar refresh failed',month); }
     }
-    await run(env,'DELETE FROM worker_cache WHERE expires_at<?',Date.now());
+    // Keep price snapshots for a day so stale-while-refresh survives hourly cleanup.
+    await run(env,"DELETE FROM worker_cache WHERE expires_at<? AND (key NOT LIKE 'quote-v2:%' OR expires_at<?)",Date.now(),Date.now()-86400000);
   },
 };

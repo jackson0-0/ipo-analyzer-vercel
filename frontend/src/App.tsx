@@ -45,6 +45,7 @@ function App() {
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [pricePeriod, setPricePeriod] = useState<Period>('since_ipo');
   const calendarCache = useRef<Record<string, CalendarData>>({});
+  const analysisCache = useRef<Record<string, Analysis>>({});
   const requestId = useRef(0);
   const activeMonth = monthKey(months[month]);
 
@@ -123,12 +124,16 @@ function App() {
   }
   async function selectIPO(ipo: IPO) {
     const id = ++requestId.current;
-    setSelected(ipo); setAnalysis(null); setLoading(true); setAnalysisError('');
+    const researchKey = JSON.stringify([ipo.name, ipo.ticker, ipo.amount, ipo.status]);
+    const cached = analysisCache.current[researchKey];
+    setSelected(ipo); setAnalysis(cached || null); setLoading(!cached); setAnalysisError('');
+    if (cached) return;
     try {
       const params = new URLSearchParams({ ticker: ipo.ticker, amount: ipo.amount, status: ipo.status });
       const response = await fetch(`${API_URL}/analyze/${encodeURIComponent(ipo.name)}?${params}`);
       if (!response.ok) throw new Error();
       const data: Analysis = await response.json();
+      analysisCache.current[researchKey] = data;
       if (id === requestId.current) setAnalysis(data);
     } catch { if (id === requestId.current) setAnalysisError('Analysis unavailable. Please try again.'); }
     finally { if (id === requestId.current) setLoading(false); }
@@ -159,7 +164,7 @@ function App() {
       {quotes[key(selected)]?.as_of && <p className="freshness">Nasdaq quote · {quotes[key(selected)].as_of} · {quotes[key(selected)].is_real_time ? 'Cached up to 5 minutes' : 'Delayed or closing quote'} · <a href={quotes[key(selected)].source_url} target="_blank" rel="noopener noreferrer">Source ↗</a></p>}
       <PriceHistory quote={quotes[key(selected)]} />
       {analysis?.analysis_checked_at && <p className="freshness">Saved SEC research · Last checked {new Date(analysis.analysis_checked_at).toLocaleString()}</p>}
-      {loading && <p className="loading" role="status">Reviewing SEC filing evidence…</p>}{analysisError && <div className="error" role="alert">{analysisError} <button onClick={() => void selectIPO(selected)}>Retry</button></div>}
+      {loading && <p className="loading" role="status">Loading research… Saved reports load first; a first-time report takes longer.</p>}{analysisError && <div className="error" role="alert">{analysisError} <button onClick={() => void selectIPO(selected)}>Retry</button></div>}
       {analysis && <ResearchVerdict analysis={analysis} source={safeSource} />}
     </section> : <section className="research-placeholder"><span className="company-mark">↗</span><h2>{view === 'research' ? 'Choose a company to research.' : 'Start with a company.'}</h2><p>Select an IPO to explore its offering, SEC evidence, and risks.</p>{view === 'research' && <button className="primary" onClick={() => setView('discover')}>Explore IPOs →</button>}</section>}
     </main><aside id="ipo-assistant" aria-label="IPO assistant" className={`assistant${assistantOpen ? ' assistant-open' : ''}`} onKeyDown={event => { if (event.key === 'Escape') { setAssistantOpen(false); document.getElementById('assistant-toggle')?.focus(); } }}><div className="assistant-heading"><h2>✧ IPO assistant</h2><span className="source-label">Coming soon</span></div>{selected && <div className="chat-context"><span className="company-mark">{selected.name.charAt(0)}</span><div><strong>{selected.name}</strong><p>Selected IPO</p></div></div>}<div className="chat-intro"><h3>Questions about an IPO?</h3><p>Chat will let you ask about a company and find answers in its SEC filings.</p></div><div className="suggestions" aria-label="Planned example questions"><p>What are the biggest risks? <span>↗</span></p><p>How will they use the proceeds? <span>↗</span></p><p>Explain the business simply. <span>↗</span></p></div><div className="chat-bottom"><label htmlFor="future-chat">Ask about this IPO</label><input id="future-chat" disabled placeholder="Chat is coming soon" /><p>You can read the company’s research below the calendar.</p></div></aside>

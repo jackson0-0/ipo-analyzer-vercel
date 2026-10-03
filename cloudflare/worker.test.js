@@ -126,3 +126,17 @@ test('Expired saved quotes return before upstream refresh completes',async()=>{
   const quote=await response.json();assert.equal(quote.price,'$11');assert.equal(quote.stale,true);assert.equal(pending.length,1);
  }finally{release?.();await Promise.all(pending);globalThis.fetch=original;}
 });
+test('Saved unsuccessful SEC lookup is reused within six hours',async()=>{
+ const e=env(),original=globalThis.fetch;
+ const {researchKey}=await import('./worker.js');
+ const stamp=new Date().toISOString();
+ e.db.prepare('INSERT INTO analysis_index VALUES (?,?,?,?)').run(researchKey('Example','EX','','priced'),JSON.stringify({score:null,sec:{status:'unavailable'},gaps:['No verified filing']}),stamp,stamp);
+ globalThis.fetch=async()=>{throw new Error('Should not repeat SEC lookup');};
+ try{const response=await worker.fetch(new Request('https://example.com/api/analyze/Example?ticker=EX&status=priced'),e);assert.equal(response.status,200);assert.equal((await response.json()).analysis_checked_at,stamp);}finally{globalThis.fetch=original;}
+});
+test('Hourly cleanup preserves recent expired quote snapshots',async()=>{
+ const e=env(),original=globalThis.fetch;
+ for(const [key,expiry] of [['quote-v2:recent',Date.now()-600000],['quote-v2:old',Date.now()-172800000],['other',Date.now()-600000]])e.db.prepare('INSERT INTO worker_cache VALUES (?,?,?)').run(key,'{}',expiry);
+ globalThis.fetch=async()=>Response.json({data:{}});
+ try{await worker.scheduled({cron:'0 * * * *',scheduledTime:Date.now()},e);assert.deepEqual(e.db.prepare('SELECT key FROM worker_cache').all().map(r=>r.key),['quote-v2:recent']);}finally{globalThis.fetch=original;}
+});
