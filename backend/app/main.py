@@ -158,7 +158,7 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
               "reported_facts": reported_facts,
               "passages": [{"id": i + 1, "text": text} for i, text in enumerate(passages)]}
     payload = json.dumps(inputs, sort_keys=True)
-    cache_key = hashlib.sha256(("sec-v7-plain-language:" + payload).encode()).hexdigest()
+    cache_key = hashlib.sha256(("sec-v8-natural-copy:" + payload).encode()).hexdigest()
     with SessionLocal() as db:
         cached = db.get(models.SECAnalysis, cache_key)
         if cached:
@@ -185,7 +185,7 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
                     "if evidence is insufficient or the offering does not match), summary, red_flag, about, "
                     "evidence_ids (1-4 IDs of the supplied passages supporting your judgment; never invent IDs), "
                     "and limitations (missing information, preliminary terms, age and partial coverage). "
-                    "WRITING RULES: Write for a first-time investor, not an analyst. Use plain, natural English. "
+                    "WRITING RULES: Use short, direct sentences with everyday words and a calm, factual tone. Do not use em dashes, en dashes, or spaced hyphens as sentence punctuation. Use a period or a comma instead; preserve minus signs, numeric ranges, official names and identifiers. Avoid canned introductions such as it is important to note, this highlights, this underscores, and investors should carefully consider. Start with the company fact, then explain its practical meaning when useful. Do not address the reader with investment advice. Prefer concrete wording such as the company has not named an acquisition target over abstract wording such as limited visibility into strategic execution. Keep qualifications that affect accuracy. Do not simplify away uncertainty or change quoted evidence. Write for a first-time investor, not an analyst. Use plain, natural English. "
                     "Return highlights, risks, and gaps as actual JSON arrays of 1-5 strings. "
                     "Each bullet must contain ONE point in ONE short sentence, ideally under 25 words. "
                     "No semicolon chains, no nested lists, no Markdown markers, no promotional language. "

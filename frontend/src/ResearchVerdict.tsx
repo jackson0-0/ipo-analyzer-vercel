@@ -20,17 +20,17 @@ export default function ResearchVerdict({ analysis, source }: { analysis: Analys
     {available && <div className="verdict-points">{groups.map((group, index) => <section className="verdict-point" key={group.title}>
       <span className="verdict-number">0{index + 1}</span>
       <div><h3>{group.title}</h3><p>{group.points[0] || 'The available filing sections don’t cover this.'}</p>
-        {group.points.length > 1 && <details><summary>More points ({group.points.length - 1})</summary><ul className="analysis-bullets">{group.points.slice(1).map((point, i) => <li key={i}>{point}</li>)}</ul></details>}
+        {group.points.length > 1 && <details><summary>More details ({group.points.length - 1})</summary><ul className="analysis-bullets">{group.points.slice(1).map((point, i) => <li key={i}>{point}</li>)}</ul></details>}
       </div>
     </section>)}</div>}
-    {analysis.score != null && <details className="verdict-explanation"><summary>What does the score mean?</summary><p className="limitations">Higher scores reflect a stronger business assessment based on the filing sections reviewed. The score is an AI judgment—not a forecast of the share price.</p></details>}
+    {analysis.score != null && <details className="verdict-explanation"><summary>What does the score mean?</summary><p className="limitations">Higher scores reflect a stronger business assessment based on the filing sections reviewed. AI generates this score. It does not predict the share price.</p></details>}
     {analysis.about && <details><summary>What the company does</summary><p>{analysis.about}</p></details>}
-    <details><summary>Financial figures from the filing ({analysis.reported_facts?.items.length || 0})</summary>
-      {analysis.reported_facts?.items.map((fact, i) => <div className="reported-fact" key={i}><div><strong>{fact.label}</strong><p>{fact.period_start ? `${fact.period_start} – ${fact.period_end}` : `As of ${fact.period_end}`}</p></div><div><strong>{fact.value.toLocaleString()} {fact.unit}</strong>{source && <p><a href={source} target="_blank" rel="noopener noreferrer">SEC source ↗</a></p>}</div></div>)}
+    <details><summary>Reported financials ({analysis.reported_facts?.items.length || 0})</summary>
+      {analysis.reported_facts?.items.map((fact, i) => <div className="reported-fact" key={i}><div><strong>{fact.label}</strong><p>{fact.period_start ? `${fact.period_start} to ${fact.period_end}` : `As of ${fact.period_end}`}</p></div><div><strong>{fact.value.toLocaleString()} {fact.unit}</strong>{source && <p><a href={source} target="_blank" rel="noopener noreferrer">SEC source ↗</a></p>}</div></div>)}
       <p className="limitations">{analysis.reported_facts?.note || 'Structured financial facts are unavailable for this filing. Missing values are not zero.'}</p>
     </details>
-    {analysis.evidence?.length > 0 && <details><summary>Passages used in the analysis ({analysis.evidence.length})</summary>{analysis.evidence.map((quote, i) => <blockquote key={i}>{quote}</blockquote>)}</details>}
-    <details><summary>What this review doesn’t cover</summary><p>{analysis.limitations}</p>{analysis.sec?.cik && <p className="limitations">Verified issuer CIK: {analysis.sec.cik}</p>}{analysis.sec?.note && <p className="limitations">{analysis.sec.note}</p>}</details>
+    {analysis.evidence?.length > 0 && <details><summary>Supporting SEC excerpts ({analysis.evidence.length})</summary>{analysis.evidence.map((quote, i) => <blockquote key={i}>{quote}</blockquote>)}</details>}
+    <details><summary>What this review doesn’t cover</summary><p>{analysis.limitations}</p>{analysis.sec?.cik && <p className="limitations">SEC company ID: {analysis.sec.cik}</p>}{analysis.sec?.note && <p className="limitations">{analysis.sec.note}</p>}</details>
     {source && <a className="filing-link" href={source} target="_blank" rel="noopener noreferrer">Read SEC {analysis.sec?.form} · Filed {analysis.sec?.filed} ↗</a>}
   </div>;
 }

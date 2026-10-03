@@ -103,7 +103,7 @@ export async function analyze(env,company,ticker,amount,status) {
   const reported_facts=await factsFor(env,filing),passages=passagesFor(filing.excerpts);
   const {excerpts:unused,...source}=filing;
   const payload=JSON.stringify({company,ticker,offer_amount:amount,status,filing:source,as_of:now().slice(0,10),reported_facts,passages:passages.map((text,i)=>({id:i+1,text}))});
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('cf-sec-v7:'+payload));
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('cf-sec-v8-natural-copy:'+payload));
   const key=[...new Uint8Array(digest)].map(n=>n.toString(16).padStart(2,'0')).join('');
   const hit=await one(env,'SELECT response FROM sec_analysis WHERE cache_key=?',key); if(hit) return JSON.parse(hit.response);
   // A database lease prevents simultaneous clicks from paying for duplicate analyses.
