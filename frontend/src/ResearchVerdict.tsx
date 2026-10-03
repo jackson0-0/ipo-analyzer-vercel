@@ -2,35 +2,37 @@ import type { Analysis } from './App';
 
 export default function ResearchVerdict({ analysis, source }: { analysis: Analysis; source: string | null }) {
   const available = analysis.sec?.status === 'available';
-  const reason = analysis.score_reason || analysis.limitations;
-  const groups = [
-    { title: 'What stands out', points: analysis.highlights?.length ? analysis.highlights : [analysis.summary] },
-    { title: 'Main risk', points: analysis.risks?.length ? analysis.risks : [analysis.red_flag] },
-    { title: 'What’s still unknown', points: analysis.gaps?.length ? analysis.gaps : [analysis.limitations] },
-  ];
+  const positives = analysis.highlights || [];
+  const risks = analysis.risks ?? [analysis.red_flag];
+  const gaps = analysis.gaps || [];
+  const facts = analysis.reported_facts?.items || [];
   return <div className="analysis verdict-layout">
-    <section className="verdict-hero" aria-label="Research verdict">
+    <section className="verdict-hero" aria-label="Company overview">
       <div className="verdict-copy">
-        <span className="eyebrow">IPO overview</span>
-        <h2>{analysis.score != null ? 'IPO at a glance' : available ? 'Not enough information to rate' : 'We couldn’t retrieve the filing'}</h2>
-        <p>{reason}</p>
+        <span className="eyebrow">Company overview</span>
+        <h2>{available ? 'What the company does' : 'Filing unavailable'}</h2>
+        <p>{analysis.about || analysis.summary}</p>
+        <p className="industry-label"><strong>Sector / industry</strong> {analysis.sec?.industry || 'Not available from SEC'}{analysis.sec?.industry && <small>SEC classification</small>}</p>
       </div>
       {analysis.score != null && <div className="verdict-score" aria-label={`AI assessment ${analysis.score} out of 10`}><div><strong>{analysis.score}</strong><span> / 10</span></div><small>AI score</small></div>}
     </section>
-    {available && <div className="verdict-points">{groups.map((group, index) => <section className="verdict-point" key={group.title}>
-      <span className="verdict-number">0{index + 1}</span>
-      <div><h3>{group.title}</h3><p>{group.points[0] || 'The available filing sections don’t cover this.'}</p>
-        {group.points.length > 1 && <details><summary>More details ({group.points.length - 1})</summary><ul className="analysis-bullets">{group.points.slice(1).map((point, i) => <li key={i}>{point}</li>)}</ul></details>}
-      </div>
-    </section>)}</div>}
-    {analysis.score != null && <details className="verdict-explanation"><summary>What does the score mean?</summary><p className="limitations">Higher scores reflect a stronger business assessment based on the filing sections reviewed. AI generates this score. It does not predict the share price.</p></details>}
-    {analysis.about && <details><summary>What the company does</summary><p>{analysis.about}</p></details>}
-    <details><summary>Reported financials ({analysis.reported_facts?.items.length || 0})</summary>
-      {analysis.reported_facts?.items.map((fact, i) => <div className="reported-fact" key={i}><div><strong>{fact.label}</strong><p>{fact.period_start ? `${fact.period_start} to ${fact.period_end}` : `As of ${fact.period_end}`}</p></div><div><strong>{fact.value.toLocaleString()} {fact.unit}</strong>{source && <p><a href={source} target="_blank" rel="noopener noreferrer">SEC source ↗</a></p>}</div></div>)}
-      <p className="limitations">{analysis.reported_facts?.note || 'Structured financial facts are unavailable for this filing. Missing values are not zero.'}</p>
-    </details>
+    <section className="research-section" aria-label="Assessment"><h3>{analysis.score != null ? 'Why this score' : 'Why there is no score'}</h3><p>{analysis.score_reason || analysis.limitations}</p>
+      {analysis.score != null && <p className="limitations">Higher scores reflect stronger fundamentals in the sections reviewed. This is an AI assessment, not a share-price forecast.</p>}
+    </section>
+    {available && <div className="research-balance">
+      <section className="research-section"><h3>Positives</h3>{positives.length ? <ul className="analysis-bullets">{positives.map((point, i) => <li key={i}>{point}</li>)}</ul> : <p>No clear positives were supported by the sections reviewed.</p>}</section>
+      <section className="research-section"><h3>Risks &amp; concerns</h3>{risks.length ? <ul className="analysis-bullets">{risks.filter(Boolean).map((point, i) => <li key={i}>{point}</li>)}</ul> : <p>No specific business risks could be verified from these excerpts. This does not establish that the IPO is low risk.</p>}</section>
+    </div>}
+    <section className="research-section"><h3>Reported financials</h3>
+      {facts.length ? facts.map((fact, i) => <div className="reported-fact" key={i}><div><strong>{fact.label}</strong><p>{fact.period_start ? `${fact.period_start} to ${fact.period_end}` : `As of ${fact.period_end}`}</p></div><div><strong>{fact.value.toLocaleString()} {fact.unit}</strong>{source && <p><a href={source} target="_blank" rel="noopener noreferrer">SEC source ↗</a></p>}</div></div>) : <p>No verified financial figures are available in the structured data for this filing. This does not mean the company has no revenue or cash.</p>}
+      {facts.length > 0 && <p className="limitations">Figures come from this filing’s standard SEC financial fields. Check the dates and units before comparing them.</p>}
+    </section>
+    <section className="research-section"><h3>Information gaps</h3>
+      {gaps.length > 0 && <ul className="analysis-bullets">{gaps.map((point, i) => <li key={i}>{point}</li>)}</ul>}
+      {analysis.limitations && <p className="limitations">{analysis.limitations}</p>}
+      <p className="limitations">This review uses selected SEC excerpts, not the full filing. The assessment does not use the separately displayed market prices, news, analyst forecasts, or peer comparisons. Sector labels reflect the SEC industry classification; a SPAC may not yet have a target industry.</p>
+    </section>
     {analysis.evidence?.length > 0 && <details><summary>Supporting SEC excerpts ({analysis.evidence.length})</summary>{analysis.evidence.map((quote, i) => <blockquote key={i}>{quote}</blockquote>)}</details>}
-    <details><summary>What this review doesn’t cover</summary><p>{analysis.limitations}</p>{analysis.sec?.cik && <p className="limitations">SEC company ID: {analysis.sec.cik}</p>}{analysis.sec?.note && <p className="limitations">{analysis.sec.note}</p>}</details>
     {source && <a className="filing-link" href={source} target="_blank" rel="noopener noreferrer">Read SEC {analysis.sec?.form} · Filed {analysis.sec?.filed} ↗</a>}
   </div>;
 }

@@ -152,7 +152,7 @@ def _filing(company_name, ticker, bucket):
     if not re.fullmatch(r"\d{10}-\d{2}-\d{6}", accession) or not re.fullmatch(r"[\w.-]+", document):
         raise ValueError("Unexpected SEC document path")
     url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession.replace('-', '')}/{document}"
-    return {"status": "available", "company": data["name"], "cik": str(cik),
+    return {"status": "available", "company": data["name"], "industry": data.get("sicDescription") or None, "cik": str(cik),
             "form": filing["form"], "filed": filing["filingDate"], "url": url,
             "accession": accession, "excerpts": _excerpts(_get(url)),
             "note": "Based on selected filing excerpts, not a full filing review. Registration statements may be preliminary or relate to another offering."}

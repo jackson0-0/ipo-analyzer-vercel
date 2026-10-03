@@ -113,8 +113,8 @@ class FilingJudgment(BaseModel):
     about: str
     evidence_ids: list[int] = Field(min_length=1, max_length=4)
     limitations: str
-    highlights: list[str] = Field(min_length=1, max_length=5)
-    risks: list[str] = Field(min_length=1, max_length=5)
+    highlights: list[str] = Field(min_length=0, max_length=5)
+    risks: list[str] = Field(min_length=0, max_length=5)
     gaps: list[str] = Field(min_length=1, max_length=5)
     score_reason: str = Field(min_length=1)
 
@@ -158,7 +158,7 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
               "reported_facts": reported_facts,
               "passages": [{"id": i + 1, "text": text} for i, text in enumerate(passages)]}
     payload = json.dumps(inputs, sort_keys=True)
-    cache_key = hashlib.sha256(("sec-v8-natural-copy:" + payload).encode()).hexdigest()
+    cache_key = hashlib.sha256(("sec-v11-balanced-overview:" + payload).encode()).hexdigest()
     with SessionLocal() as db:
         cached = db.get(models.SECAnalysis, cache_key)
         if cached:
@@ -185,8 +185,8 @@ def analyze(company_name: str, ticker: str = "", amount: str = "", status: str =
                     "if evidence is insufficient or the offering does not match), summary, red_flag, about, "
                     "evidence_ids (1-4 IDs of the supplied passages supporting your judgment; never invent IDs), "
                     "and limitations (missing information, preliminary terms, age and partial coverage). "
-                    "WRITING RULES: Use short, direct sentences with everyday words and a calm, factual tone. Do not use em dashes, en dashes, or spaced hyphens as sentence punctuation. Use a period or a comma instead; preserve minus signs, numeric ranges, official names and identifiers. Avoid canned introductions such as it is important to note, this highlights, this underscores, and investors should carefully consider. Start with the company fact, then explain its practical meaning when useful. Do not address the reader with investment advice. Prefer concrete wording such as the company has not named an acquisition target over abstract wording such as limited visibility into strategic execution. Keep qualifications that affect accuracy. Do not simplify away uncertainty or change quoted evidence. Write for a first-time investor, not an analyst. Use plain, natural English. "
-                    "Return highlights, risks, and gaps as actual JSON arrays of 1-5 strings. "
+                    "WRITING RULES: Organize the assessment into distinct purposes: about explains what the company does; highlights contains only supported positives; risks contains actual business or offering risks; gaps contains unavailable evidence. Do not treat a missing data field or an excerpt omission as proof of a business weakness. Do not repeat the same concern in risks, gaps, and limitations. Give positives and risks equal attention, but never invent positives or force equal counts. Return highlights as an empty array if no clear positives are supported. Use up to three concise points per section. Keep limitations to one short sentence covering scope, age, or preliminary terms without repeating the gaps. Use the supplied SEC industry classification as context, not proof of a SPAC acquisition target or future business. Use short, direct sentences with everyday words and a calm, factual tone. Do not use em dashes, en dashes, or spaced hyphens as sentence punctuation. Use a period or a comma instead; preserve minus signs, numeric ranges, official names and identifiers. Avoid canned introductions such as it is important to note, this highlights, this underscores, and investors should carefully consider. Start with the company fact, then explain its practical meaning when useful. Do not address the reader with investment advice. Prefer concrete wording such as the company has not named an acquisition target over abstract wording such as limited visibility into strategic execution. Keep qualifications that affect accuracy. Do not simplify away uncertainty or change quoted evidence. Write for a first-time investor, not an analyst. Use plain, natural English. "
+                    "Return highlights and risks as actual JSON arrays of 0-3 strings, and gaps as an actual JSON array of 1-3 strings. If the excerpts lack information about profitability, revenue, ownership, or use of proceeds, put that only in gaps, never in risks. If no specific business or offering risk is evidenced, return an empty risks array. An unavailable fact is not an adverse fact. "
                     "Each bullet must contain ONE point in ONE short sentence, ideally under 25 words. "
                     "No semicolon chains, no nested lists, no Markdown markers, no promotional language. "
                     "Put the most useful point first; do not repeat the same claim across sections. "

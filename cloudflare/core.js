@@ -85,11 +85,11 @@ export function validateJudgment(input,passages) {
         if(points.length>5) points=[...points.slice(0,4),points.slice(4).join(' ')];
       }
     }
-    if(!Array.isArray(points)||points.length<1||points.length>5||points.some(p=>typeof p!=='string')) throw new Error(`Invalid ${key}`);
+    if(!Array.isArray(points)||points.length<(key==='gaps'?1:0)||points.length>5||points.some(p=>typeof p!=='string')) throw new Error(`Invalid ${key}`);
     result[key]=points;
   }
   const ids=input.evidence_ids;
   if(!Array.isArray(ids)||ids.length<1||ids.length>4||ids.some(i=>!Number.isInteger(i)||i<1||i>passages.length)) throw new Error('Unknown SEC passage');
   result.evidence=[...new Set(ids)].map(i=>passages[i-1]); return result;
 }
-export const judgmentSchema={type:'object',properties:{score:{anyOf:[{type:'integer',minimum:1,maximum:10},{type:'null'}]},...Object.fromEntries(['summary','red_flag','about','limitations','score_reason'].map(k=>[k,{type:'string'}])),...Object.fromEntries(['highlights','risks','gaps'].map(k=>[k,{type:'array',items:{type:'string'},minItems:1,maxItems:5}])),evidence_ids:{type:'array',items:{type:'integer'},minItems:1,maxItems:4}},required:['score','summary','red_flag','about','limitations','score_reason','highlights','risks','gaps','evidence_ids']};
+export const judgmentSchema={type:'object',properties:{score:{anyOf:[{type:'integer',minimum:1,maximum:10},{type:'null'}]},...Object.fromEntries(['summary','red_flag','about','limitations','score_reason'].map(k=>[k,{type:'string'}])),...Object.fromEntries(['highlights','risks','gaps'].map(k=>[k,{type:'array',items:{type:'string'},minItems:k==='gaps'?1:0,maxItems:5}])),evidence_ids:{type:'array',items:{type:'integer'},minItems:1,maxItems:4}},required:['score','summary','red_flag','about','limitations','score_reason','highlights','risks','gaps','evidence_ids']};

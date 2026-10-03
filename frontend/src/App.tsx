@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import './App.css';
 import ResearchVerdict from './ResearchVerdict';
+import { QuoteLabel, PriceHistory } from './Prices';
+import { periods, changeFor, percentText, heatClass, offerText } from './price-format';
+import type { Period, Quote } from './price-format';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-type IPO = { name: string; ticker: string; date: string; amount: string; status: string };
+type IPO = { name: string; ticker: string; date: string; amount: string; status: string; offer_price?: string | null };
 type ReportedFact = { label: string; value: number; unit: string; period_start: string | null; period_end: string; tag: string; source_url: string };
-export type Analysis = { highlights?: string[]; risks?: string[]; gaps?: string[]; score_reason?: string; reported_facts?: { items: ReportedFact[]; note: string }; score: number | null; about: string; summary: string; red_flag: string; limitations: string; evidence: string[]; sec?: { url?: string; cik?: string; form?: string; filed?: string; note?: string; status?: string } };
+export type Analysis = { analysis_updated_at?: string; analysis_checked_at?: string; highlights?: string[]; risks?: string[]; gaps?: string[]; score_reason?: string; reported_facts?: { items: ReportedFact[]; note: string }; score: number | null; about: string; summary: string; red_flag: string; limitations: string; evidence: string[]; sec?: { industry?: string | null; url?: string; cik?: string; form?: string; filed?: string; note?: string; status?: string } };
 const key = (ipo: IPO) => `${ipo.name}|${ipo.ticker}|${ipo.date}`;
 const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 const monthLabel = (date: Date) => date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -38,6 +41,8 @@ function App() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+  const [pricePeriod, setPricePeriod] = useState<Period>('since_ipo');
   const requestId = useRef(0);
   const activeMonth = monthKey(months[month]);
 
@@ -51,6 +56,39 @@ function App() {
     return () => controller.abort();
   }, [activeMonth, retry]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const companies = [...new Map([...ipos, ...(view === 'watchlist' ? saved : []), ...(selected ? [selected] : [])].map(ipo => [key(ipo), ipo])).values()];
+    let running = false;
+    async function refreshPrices() {
+      if (running || controller.signal.aborted) return;
+      running = true;
+      const queue = [...companies];
+      await Promise.all(Array.from({ length: 3 }, async () => {
+        while (queue.length && !controller.signal.aborted) {
+          const ipo = queue.shift()!;
+          if (!ipo.ticker) { setQuotes(prev => ({...prev, [key(ipo)]: {status:'unavailable',price:null}})); continue; }
+          try {
+            const params = new URLSearchParams({company:ipo.name,status:ipo.status,offer_price:ipo.offer_price || '',date:ipo.date});
+            const response = await fetch(`${API_URL}/quote/${encodeURIComponent(ipo.ticker)}?${params}`, {signal:controller.signal});
+            if (!response.ok) throw new Error();
+            const data: Quote = await response.json();
+            if (!controller.signal.aborted) setQuotes(prev => ({...prev, [key(ipo)]:data}));
+          } catch { if (!controller.signal.aborted) setQuotes(prev => ({...prev, [key(ipo)]:{status:'unavailable',price:null}})); }
+        }
+      }));
+      running = false;
+    }
+    void refreshPrices();
+    const timer = setInterval(() => { if (!document.hidden) void refreshPrices(); }, 300000);
+    return () => {controller.abort(); clearInterval(timer);};
+  }, [ipos, saved, selected, view]);
+
+  function priceDescription(ipo: IPO) {
+    const q = quotes[key(ipo)], change = changeFor(q, pricePeriod);
+    const label = periods.find(p => p.id === pricePeriod)!.label;
+    return change?.percent == null ? `${label}: ${ipo.status === 'upcoming' ? 'not trading yet' : 'not enough price history'}` : `${label}: ${percentText(change.percent)} through ${q.changes?.as_of} close, from ${change.from}. Unadjusted for splits and dividends.`;
+  }
   function toggleSave(ipo: IPO) {
     const next = saved.some(item => key(item) === key(ipo)) ? saved.filter(item => key(item) !== key(ipo)) : [...saved, ipo];
     setSaved(next);
@@ -91,10 +129,14 @@ function App() {
     {view === 'discover' && freshness && <p className="freshness" role="status">Nasdaq · Last updated {new Date(freshness.updated_at).toLocaleString()}{freshness.stale && ' · Showing saved data'}{freshness.refresh_failed && ' · Refresh temporarily unavailable'}</p>}
     {storageError && <p className="error" role="alert">{storageError}</p>}
     {view !== 'research' && <><div className="toolbar"><span>{view === 'watchlist' ? `${saved.length} saved companies` : calendarLoading ? 'Loading offerings…' : `${visible.length} offerings`}</span>{view === 'discover' && <div className="segmented">{(['calendar', 'list'] as const).map(item => <button key={item} aria-pressed={mode === item} onClick={() => setMode(item)}>{item === 'calendar' ? 'Calendar' : 'List'}</button>)}</div>}</div>
+      {view === 'discover' && <div className="heatmap-controls"><div className="segmented" role="group" aria-label="Price change period">{periods.map(p => <button key={p.id} aria-pressed={pricePeriod === p.id} onClick={() => setPricePeriod(p.id)}>{p.label}</button>)}</div><div className="heatmap-scale" aria-label="Price change color scale"><span>−20% or less</span><span className="heatmap-gradient" aria-hidden="true" /><span>+20% or more</span></div><p>Daily closing prices · Gray = unchanged or unavailable · Unadjusted for splits and dividends</p></div>}
       {view === 'discover' && calendarError ? <div className="empty" role="alert"><p>{calendarError}</p><button className="primary" onClick={() => { setCalendarLoading(true); setCalendarError(''); setRetry(retry + 1); }}>Try again</button></div> : view === 'discover' && calendarLoading ? <div className="empty" role="status">Loading IPO calendar…</div> : <>
-      {view === 'discover' && mode === 'calendar' ? <><section className="calendar" aria-label={monthLabel(months[month])}>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <div className="weekday" key={day}>{day}</div>)}{Array.from({ length: offset }, (_, i) => <div className="day blank" key={`blank-${i}`} />)}{Array.from({ length: days }, (_, i) => <div className="day" key={i}><span className="day-number">{i + 1}</span>{visible.filter(ipo => dateParts(ipo.date)?.day === i + 1).map(ipo => <button key={key(ipo)} className="ipo-event" aria-pressed={!!selected && key(selected) === key(ipo)} aria-label={`${ipo.name}, ${ipo.date}`} onClick={() => void selectIPO(ipo)}>{ipo.ticker || ipo.name}</button>)}</div>)}</section>{!visible.length && <p className="empty-note">No offerings were reported for this month.</p>}</> : <section className="ipo-list" aria-label={view === 'watchlist' ? 'Saved IPOs' : 'IPO offerings'}>{rows.length ? rows.map(ipo => <div className="ipo-row" key={key(ipo)}><button className="company-button" onClick={() => void selectIPO(ipo)} aria-pressed={!!selected && key(selected) === key(ipo)}><span className="company-mark">{ipo.name.charAt(0)}</span><span><strong>{ipo.name}</strong><small>{ipo.ticker || 'Ticker pending'} · {ipo.status}</small></span><span className="row-date">{ipo.date}</span></button>{view === 'watchlist' && <button className="remove" aria-label={`Remove ${ipo.name} from watchlist`} onClick={() => toggleSave(ipo)}>×</button>}</div>) : <div className="empty"><h2>{view === 'watchlist' ? 'Your watchlist is empty.' : 'No offerings this month.'}</h2><p>{view === 'watchlist' ? 'Select an IPO in Discover and save it to your watchlist.' : 'Choose another month to explore more IPOs.'}</p></div>}</section>}</>}
+      {view === 'discover' && mode === 'calendar' ? <><section className="calendar" aria-label={monthLabel(months[month])}>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <div className="weekday" key={day}>{day}</div>)}{Array.from({ length: offset }, (_, i) => <div className="day blank" key={`blank-${i}`} />)}{Array.from({ length: days }, (_, i) => <div className="day" key={i}><span className="day-number">{i + 1}</span>{visible.filter(ipo => dateParts(ipo.date)?.day === i + 1).map(ipo => <button key={key(ipo)} className={`ipo-event ${heatClass(quotes[key(ipo)], pricePeriod)}`} title={`IPO offer: ${offerText(ipo.offer_price)}. Latest quote: ${quotes[key(ipo)]?.price || (ipo.status === 'upcoming' ? 'Not trading yet' : 'Unavailable')}. ${priceDescription(ipo)}`} aria-pressed={!!selected && key(selected) === key(ipo)} aria-label={`${ipo.name}, ${ipo.date}. ${priceDescription(ipo)}`} onClick={() => void selectIPO(ipo)}>{ipo.ticker || ipo.name}</button>)}</div>)}</section>{!visible.length && <p className="empty-note">No offerings were reported for this month.</p>}</> : <section className="ipo-list" aria-label={view === 'watchlist' ? 'Saved IPOs' : 'IPO offerings'}>{rows.length ? rows.map(ipo => <div className="ipo-row" key={key(ipo)}><button className="company-button" onClick={() => void selectIPO(ipo)} aria-pressed={!!selected && key(selected) === key(ipo)}><span className="company-mark">{ipo.name.charAt(0)}</span><span><strong>{ipo.name}</strong><small>{ipo.ticker || 'Ticker pending'} · {ipo.status}</small><span className="list-prices">IPO {offerText(ipo.offer_price)} · Latest <QuoteLabel quote={quotes[key(ipo)]} upcoming={ipo.status === 'upcoming'} /><span className="list-change">{priceDescription(ipo)}</span></span></span><span className="row-date">{ipo.date}</span></button>{view === 'watchlist' && <button className="remove" aria-label={`Remove ${ipo.name} from watchlist`} onClick={() => toggleSave(ipo)}>×</button>}</div>) : <div className="empty"><h2>{view === 'watchlist' ? 'Your watchlist is empty.' : 'No offerings this month.'}</h2><p>{view === 'watchlist' ? 'Select an IPO in Discover and save it to your watchlist.' : 'Choose another month to explore more IPOs.'}</p></div>}</section>}</>}
     </>}
-    {selected ? <section className="research-card" aria-label="Selected IPO research"><div className="company-heading"><span className="company-mark">{selected.name.charAt(0)}</span><div><h2>{selected.name}</h2><p>{selected.ticker || 'Ticker pending'} · {selected.status}</p></div><button className="save-button" aria-pressed={!!isSaved} onClick={() => toggleSave(selected)}>{isSaved ? '★ Saved' : '☆ Save'}</button></div><dl className="facts"><div><dt>{selected.status === 'priced' ? 'Priced date' : 'Expected date'}</dt><dd>{selected.date}</dd></div><div><dt>Offering · Nasdaq</dt><dd>{selected.amount || 'Not disclosed'}</dd></div><div><dt>Source</dt><dd>{analysis?.sec?.form || 'SEC filings'}</dd></div></dl>
+    {selected ? <section className="research-card" aria-label="Selected IPO research"><div className="company-heading"><span className="company-mark">{selected.name.charAt(0)}</span><div><h2>{selected.name}</h2><p>{selected.ticker || 'Ticker pending'} · {selected.status}</p></div><button className="save-button" aria-pressed={!!isSaved} onClick={() => toggleSave(selected)}>{isSaved ? '★ Saved' : '☆ Save'}</button></div><dl className="facts"><div><dt>{selected.status === 'priced' ? 'Priced date' : 'Expected date'}</dt><dd>{selected.date}</dd></div><div><dt>Offering · Nasdaq</dt><dd>{selected.amount || 'Not disclosed'}</dd></div><div><dt>IPO offer price</dt><dd>{offerText(selected.offer_price)}</dd></div><div><dt>Latest trading price</dt><dd><QuoteLabel quote={quotes[key(selected)]} upcoming={selected.status === 'upcoming'} /></dd></div></dl>
+      {quotes[key(selected)]?.as_of && <p className="freshness">Nasdaq quote · {quotes[key(selected)].as_of} · {quotes[key(selected)].is_real_time ? 'Cached up to 5 minutes' : 'Delayed or closing quote'} · <a href={quotes[key(selected)].source_url} target="_blank" rel="noopener noreferrer">Source ↗</a></p>}
+      <PriceHistory quote={quotes[key(selected)]} />
+      {analysis?.analysis_checked_at && <p className="freshness">Saved SEC research · Last checked {new Date(analysis.analysis_checked_at).toLocaleString()}</p>}
       {loading && <p className="loading" role="status">Reviewing SEC filing evidence…</p>}{analysisError && <div className="error" role="alert">{analysisError} <button onClick={() => void selectIPO(selected)}>Retry</button></div>}
       {analysis && <ResearchVerdict analysis={analysis} source={safeSource} />}
     </section> : <section className="research-placeholder"><span className="company-mark">↗</span><h2>{view === 'research' ? 'Choose a company to research.' : 'Start with a company.'}</h2><p>Select an IPO to explore its offering, SEC evidence, and risks.</p>{view === 'research' && <button className="primary" onClick={() => setView('discover')}>Explore IPOs →</button>}</section>}
