@@ -7,7 +7,7 @@ import worker,{calendar} from './worker.js';
 function env() {
  const db=new DatabaseSync(':memory:'); db.exec(readFileSync(new URL('./migrations/0001_initial.sql',import.meta.url),'utf8'));
  db.exec(readFileSync(new URL('./migrations/0002_background_research.sql',import.meta.url),'utf8'));
- return {DB:{prepare(sql){return {all:async()=>({results:db.prepare(sql).all()}),bind(...args){return {first:async()=>db.prepare(sql).get(...args),run:async()=>db.prepare(sql).run(...args)}}}}},db};
+ return {DB:{prepare(sql){return {all:async()=>({results:db.prepare(sql).all()}),bind(...args){return {all:async()=>({results:db.prepare(sql).all(...args)}),first:async()=>db.prepare(sql).get(...args),run:async()=>db.prepare(sql).run(...args)}}}}},db};
 }
 test('Names normalize suffixes without fuzzy matching',()=>{
  assert.equal(normalizeName('Example, Inc.'),'example'); assert.notEqual(normalizeName('Example One'),normalizeName('Example Two'));
@@ -102,5 +102,18 @@ test('Background scheduler saves research without a user opening a company',asyn
   const response=await worker.fetch(new Request('https://app/api/analyze/Example%20Inc?ticker=EX&amount=100&status=upcoming'),e);
   assert.equal((await response.json()).sec.industry,'Test industry');assert.equal(calls,1);
   await refreshBackground(e);assert.equal(calls,1);
+ }finally{globalThis.fetch=original;}
+});
+test('Calendar includes saved price colors without requesting upstream quotes',async()=>{
+ const e=env(),original=globalThis.fetch;
+ const ipo={name:'Example Inc',ticker:'EX',date:'9/20/2026',status:'priced',offer_price:'10'};
+ e.db.prepare('INSERT INTO calendar_snapshots VALUES (?,?,?)').run('2026-09',JSON.stringify([ipo]),new Date().toISOString());
+ e.db.prepare('INSERT INTO worker_cache VALUES (?,?,?)').run('quote-v2:'+JSON.stringify(['EX',normalizeName(ipo.name),'10',ipo.date]),JSON.stringify({status:'available',price:'$11',changes:{items:[{period:'since_ipo',percent:10}]}}),Date.now()-1000);
+ globalThis.fetch=async()=>{throw new Error('Unexpected upstream request');};
+ try {
+  const response=await worker.fetch(new Request('https://example.com/api/calendar?month=2026-09'),e);
+  assert.equal(response.status,200);
+  const data=await response.json(),quote=data.quotes['Example Inc|EX|9/20/2026'];
+  assert.equal(quote.changes.items[0].percent,10);assert.equal(quote.stale,true);
  }finally{globalThis.fetch=original;}
 });

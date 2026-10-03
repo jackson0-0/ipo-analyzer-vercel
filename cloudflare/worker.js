@@ -205,7 +205,19 @@ export default {
       if(path==='/api/calendar'||path==='/api/ipos') {
         const month=url.searchParams.get('month')||now().slice(0,7);
         if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json({detail:'Use a month in YYYY-MM format.'},422);
-        const result=await calendar(env,month); return json(path.endsWith('/ipos')?result.ipos:result);
+        const result=await calendar(env,month);
+        if(path.endsWith('/ipos')) return json(result.ipos);
+        // Return saved prices with the calendar so colors do not wait on upstream requests.
+        const quotes={};
+        const saved=await env.DB.prepare("SELECT key,response,expires_at FROM worker_cache WHERE key LIKE 'quote-v2:%' AND expires_at>?").bind(Date.now()-86400000).all();
+        const byKey=new Map(saved.results.map(row=>[row.key,row]));
+        for(const ipo of result.ipos){
+          if(ipo.status==='upcoming')continue;
+          const key='quote-v2:'+JSON.stringify([ipo.ticker,normalizeName(ipo.name),ipo.offer_price||'',ipo.date]);
+          const row=byKey.get(key);
+          if(row && row.expires_at>Date.now()-86400000) quotes[`${ipo.name}|${ipo.ticker}|${ipo.date}`]={...JSON.parse(row.response),stale:row.expires_at<=Date.now()};
+        }
+        return json({...result,quotes});
       }
       if(path.startsWith('/api/quote/')) {
         const ticker=decodeURIComponent(path.slice('/api/quote/'.length)).toUpperCase(),company=url.searchParams.get('company')||'';

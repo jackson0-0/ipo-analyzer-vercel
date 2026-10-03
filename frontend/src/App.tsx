@@ -7,6 +7,7 @@ import type { Period, Quote } from './price-format';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 type IPO = { name: string; ticker: string; date: string; amount: string; status: string; offer_price?: string | null };
+type CalendarData = { quotes?: Record<string, Quote>; ipos: IPO[]; updated_at: string; stale: boolean; refresh_failed: boolean };
 type ReportedFact = { label: string; value: number; unit: string; period_start: string | null; period_end: string; tag: string; source_url: string };
 export type Analysis = { analysis_updated_at?: string; analysis_checked_at?: string; highlights?: string[]; risks?: string[]; gaps?: string[]; score_reason?: string; reported_facts?: { items: ReportedFact[]; note: string }; score: number | null; about: string; summary: string; red_flag: string; limitations: string; evidence: string[]; sec?: { industry?: string | null; url?: string; cik?: string; form?: string; filed?: string; note?: string; status?: string } };
 const key = (ipo: IPO) => `${ipo.name}|${ipo.ticker}|${ipo.date}`;
@@ -43,6 +44,7 @@ function App() {
   const [retry, setRetry] = useState(0);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [pricePeriod, setPricePeriod] = useState<Period>('since_ipo');
+  const calendarCache = useRef<Record<string, CalendarData>>({});
   const requestId = useRef(0);
   const activeMonth = monthKey(months[month]);
 
@@ -50,11 +52,30 @@ function App() {
     const controller = new AbortController();
     fetch(`${API_URL}/calendar?month=${activeMonth}`, { signal: controller.signal })
       .then(async res => { if (!res.ok) throw new Error(); const data = await res.json(); if (!Array.isArray(data.ipos)) throw new Error(); return data; })
-      .then(data => { if (!controller.signal.aborted) { setIpos(data.ipos); setFreshness(data); } })
+      .then(data => { if (!controller.signal.aborted) { calendarCache.current[activeMonth] = data; setQuotes(prev => ({...prev, ...data.quotes})); setIpos(data.ipos); setFreshness(data); } })
       .catch(() => { if (!controller.signal.aborted) setCalendarError('The IPO calendar is unavailable. Please try again.'); })
       .finally(() => { if (!controller.signal.aborted) setCalendarLoading(false); });
     return () => controller.abort();
   }, [activeMonth, retry]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const queue = months.slice(1).map(monthKey);
+    // Warm calendar data only; research keeps its separate daily AI budget.
+    async function preload() {
+      while (queue.length && !controller.signal.aborted) {
+        const target = queue.shift()!;
+        try {
+          const response = await fetch(`${API_URL}/calendar?month=${target}`, {signal: controller.signal});
+          if (!response.ok) continue;
+          const data: CalendarData = await response.json();
+          if (!controller.signal.aborted && Array.isArray(data.ipos)) calendarCache.current[target] = data;
+        } catch { /* A failed preload can retry when the month is opened. */ }
+      }
+    }
+    void Promise.all([preload(), preload()]);
+    return () => controller.abort();
+  }, [months]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -87,7 +108,8 @@ function App() {
   function priceDescription(ipo: IPO) {
     const q = quotes[key(ipo)], change = changeFor(q, pricePeriod);
     const label = periods.find(p => p.id === pricePeriod)!.label;
-    return change?.percent == null ? `${label}: ${ipo.status === 'upcoming' ? 'not trading yet' : 'not enough price history'}` : `${label}: ${percentText(change.percent)} through ${q.changes?.as_of} close, from ${change.from}. Unadjusted for splits and dividends.`;
+    if (!q) return 'Loading price change…';
+    return change?.percent == null ? `${label}: ${ipo.status === 'upcoming' ? 'not trading yet' : 'not enough price history'}` : `${label}: ${percentText(change.percent)} through ${q.changes?.as_of} close, from ${change.from}${q.stale ? "; saved price, refreshing" : ""}. Unadjusted for splits and dividends.`;
   }
   function toggleSave(ipo: IPO) {
     const next = saved.some(item => key(item) === key(ipo)) ? saved.filter(item => key(item) !== key(ipo)) : [...saved, ipo];
@@ -96,7 +118,7 @@ function App() {
     catch { setStorageError('Your browser could not save this watchlist. Changes will last only for this session.'); }
   }
   function changeMonth(index: number) {
-    if (index !== month) { setMonth(index); setFreshness(null); setIpos([]); setCalendarLoading(true); setCalendarError(''); requestId.current++; setSelected(null); setAnalysis(null); setLoading(false); setAnalysisError(''); }
+    if (index !== month) { const cached = calendarCache.current[monthKey(months[index])]; setMonth(index); if (cached?.quotes) setQuotes(prev => ({...prev, ...cached.quotes})); setFreshness(cached || null); setIpos(cached?.ipos || []); setCalendarLoading(!cached); setCalendarError(''); requestId.current++; setSelected(null); setAnalysis(null); setLoading(false); setAnalysisError(''); }
     setView('discover');
   }
   async function selectIPO(ipo: IPO) {
@@ -129,7 +151,7 @@ function App() {
     {view === 'discover' && freshness && <p className="freshness" role="status">Nasdaq · Last updated {new Date(freshness.updated_at).toLocaleString()}{freshness.stale && ' · Showing saved data'}{freshness.refresh_failed && ' · Refresh temporarily unavailable'}</p>}
     {storageError && <p className="error" role="alert">{storageError}</p>}
     {view !== 'research' && <><div className="toolbar"><span>{view === 'watchlist' ? `${saved.length} saved companies` : calendarLoading ? 'Loading offerings…' : `${visible.length} offerings`}</span>{view === 'discover' && <div className="segmented">{(['calendar', 'list'] as const).map(item => <button key={item} aria-pressed={mode === item} onClick={() => setMode(item)}>{item === 'calendar' ? 'Calendar' : 'List'}</button>)}</div>}</div>
-      {view === 'discover' && <div className="heatmap-controls"><div className="segmented" role="group" aria-label="Price change period">{periods.map(p => <button key={p.id} aria-pressed={pricePeriod === p.id} onClick={() => setPricePeriod(p.id)}>{p.label}</button>)}</div><div className="heatmap-scale" aria-label="Price change color scale"><span>−20% or less</span><span className="heatmap-gradient" aria-hidden="true" /><span>+20% or more</span></div><p>Daily closing prices · 24 hour uses the previous trading close · Gray = unchanged or unavailable · Unadjusted for splits and dividends</p></div>}
+      {view === 'discover' && <div className="heatmap-controls"><div className="segmented" role="group" aria-label="Price change period">{periods.map(p => <button key={p.id} aria-pressed={pricePeriod === p.id} onClick={() => setPricePeriod(p.id)}>{p.label}</button>)}</div><div className="heatmap-scale" aria-label="Price change color scale"><span>−20% or less</span><span className="heatmap-gradient" aria-hidden="true" /><span>+20% or more</span></div><p>{visible.some(ipo => ipo.ticker && !quotes[key(ipo)]) ? 'Loading price colors… · ' : ''}Saved price colors appear first and refresh automatically · Daily closing prices · 24 hour uses the previous trading close · Gray = unchanged or unavailable · Unadjusted for splits and dividends</p></div>}
       {view === 'discover' && calendarError ? <div className="empty" role="alert"><p>{calendarError}</p><button className="primary" onClick={() => { setCalendarLoading(true); setCalendarError(''); setRetry(retry + 1); }}>Try again</button></div> : view === 'discover' && calendarLoading ? <div className="empty" role="status">Loading IPO calendar…</div> : <>
       {view === 'discover' && mode === 'calendar' ? <><section className="calendar" aria-label={monthLabel(months[month])}>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <div className="weekday" key={day}>{day}</div>)}{Array.from({ length: offset }, (_, i) => <div className="day blank" key={`blank-${i}`} />)}{Array.from({ length: days }, (_, i) => <div className="day" key={i}><span className="day-number">{i + 1}</span>{visible.filter(ipo => dateParts(ipo.date)?.day === i + 1).map(ipo => <button key={key(ipo)} className={`ipo-event ${heatClass(quotes[key(ipo)], pricePeriod)}`} title={`IPO offer: ${offerText(ipo.offer_price)}. Latest quote: ${quotes[key(ipo)]?.price || (ipo.status === 'upcoming' ? 'Not trading yet' : 'Unavailable')}. ${priceDescription(ipo)}`} aria-pressed={!!selected && key(selected) === key(ipo)} aria-label={`${ipo.name}, ${ipo.date}. ${priceDescription(ipo)}`} onClick={() => void selectIPO(ipo)}>{ipo.ticker || ipo.name}</button>)}</div>)}</section>{!visible.length && <p className="empty-note">No offerings were reported for this month.</p>}</> : <section className="ipo-list" aria-label={view === 'watchlist' ? 'Saved IPOs' : 'IPO offerings'}>{rows.length ? rows.map(ipo => <div className="ipo-row" key={key(ipo)}><button className="company-button" onClick={() => void selectIPO(ipo)} aria-pressed={!!selected && key(selected) === key(ipo)}><span className="company-mark">{ipo.name.charAt(0)}</span><span><strong>{ipo.name}</strong><small>{ipo.ticker || 'Ticker pending'} · {ipo.status}</small><span className="list-prices">IPO {offerText(ipo.offer_price)} · Latest <QuoteLabel quote={quotes[key(ipo)]} upcoming={ipo.status === 'upcoming'} /><span className="list-change">{priceDescription(ipo)}</span></span></span><span className="row-date">{ipo.date}</span></button>{view === 'watchlist' && <button className="remove" aria-label={`Remove ${ipo.name} from watchlist`} onClick={() => toggleSave(ipo)}>×</button>}</div>) : <div className="empty"><h2>{view === 'watchlist' ? 'Your watchlist is empty.' : 'No offerings this month.'}</h2><p>{view === 'watchlist' ? 'Select an IPO in Discover and save it to your watchlist.' : 'Choose another month to explore more IPOs.'}</p></div>}</section>}</>}
     </>}
