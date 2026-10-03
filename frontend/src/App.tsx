@@ -147,7 +147,7 @@ function App() {
 
   return <div className="app">
     <header className="topbar"><a className="brand" href="/" aria-label="IPO Analyzer home"><span className="brand-mark">↗</span>IPO <span className="brand-divider">/</span> analyzer</a>
-      <nav aria-label="Main navigation">{(['discover', 'research', 'watchlist'] as const).map(tab => <button key={tab} aria-current={view === tab ? 'page' : undefined} onClick={() => setView(tab)}>{tab === 'watchlist' ? 'My watchlist' : tab === 'research' ? 'Research' : 'Discover'}{tab === 'watchlist' && saved.length > 0 && <span className="count">{saved.length}</span>}</button>)}</nav>
+      <nav aria-label="Main navigation">{(['discover', 'watchlist'] as const).map(tab => <button key={tab} aria-current={view === tab ? 'page' : undefined} onClick={() => setView(tab)}>{tab === 'watchlist' ? 'My watchlist' : 'Discover'}{tab === 'watchlist' && saved.length > 0 && <span className="count">{saved.length}</span>}</button>)}</nav>
       <button className="account-button" onClick={() => setAccountOpen(!accountOpen)} aria-expanded={accountOpen} aria-controls="account-panel"><span className="avatar">You</span><span>My workspace</span><span aria-hidden="true">⌄</span></button>
     </header>
     {accountOpen && <section className="account-panel" id="account-panel"><div><h2>Your personal workspace</h2><p>Your watchlist is saved in this browser. Sign-in and syncing across devices are coming later.</p></div><button onClick={() => { setView('watchlist'); setAccountOpen(false); }}>View saved IPOs →</button></section>}
