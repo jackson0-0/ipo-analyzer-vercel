@@ -36,6 +36,7 @@ function App() {
   const [analysisError, setAnalysisError] = useState('');
   const [storageError, setStorageError] = useState('');
   const [accountOpen, setAccountOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [retry, setRetry] = useState(0);
   const requestId = useRef(0);
   const activeMonth = monthKey(months[month]);
@@ -97,7 +98,7 @@ function App() {
       {loading && <p className="loading" role="status">Reviewing SEC filing evidence…</p>}{analysisError && <div className="error" role="alert">{analysisError} <button onClick={() => void selectIPO(selected)}>Retry</button></div>}
       {analysis && <ResearchVerdict analysis={analysis} source={safeSource} />}
     </section> : <section className="research-placeholder"><span className="company-mark">↗</span><h2>{view === 'research' ? 'Choose a company to research.' : 'Start with a company.'}</h2><p>Select an IPO to explore its offering, SEC evidence, and risks.</p>{view === 'research' && <button className="primary" onClick={() => setView('discover')}>Explore IPOs →</button>}</section>}
-    </main><aside className="assistant"><div className="assistant-heading"><h2>✧ IPO assistant</h2><span className="source-label">Coming soon</span></div>{selected && <div className="chat-context"><span className="company-mark">{selected.name.charAt(0)}</span><div><strong>{selected.name}</strong><p>Selected IPO</p></div></div>}<div className="chat-intro"><h3>Questions about an IPO?</h3><p>Chat will let you ask about a company and find answers in its SEC filings.</p></div><div className="suggestions" aria-label="Planned example questions"><p>What are the biggest risks? <span>↗</span></p><p>How will they use the proceeds? <span>↗</span></p><p>Explain the business simply. <span>↗</span></p></div><div className="chat-bottom"><label htmlFor="future-chat">Ask about this IPO</label><input id="future-chat" disabled placeholder="Chat is coming soon" /><p>You can read the company’s research below the calendar.</p></div></aside>
-    </div></div>;
+    </main><aside id="ipo-assistant" aria-label="IPO assistant" className={`assistant${assistantOpen ? ' assistant-open' : ''}`} onKeyDown={event => { if (event.key === 'Escape') { setAssistantOpen(false); document.getElementById('assistant-toggle')?.focus(); } }}><div className="assistant-heading"><h2>✧ IPO assistant</h2><span className="source-label">Coming soon</span></div>{selected && <div className="chat-context"><span className="company-mark">{selected.name.charAt(0)}</span><div><strong>{selected.name}</strong><p>Selected IPO</p></div></div>}<div className="chat-intro"><h3>Questions about an IPO?</h3><p>Chat will let you ask about a company and find answers in its SEC filings.</p></div><div className="suggestions" aria-label="Planned example questions"><p>What are the biggest risks? <span>↗</span></p><p>How will they use the proceeds? <span>↗</span></p><p>Explain the business simply. <span>↗</span></p></div><div className="chat-bottom"><label htmlFor="future-chat">Ask about this IPO</label><input id="future-chat" disabled placeholder="Chat is coming soon" /><p>You can read the company’s research below the calendar.</p></div></aside>
+    </div><button id="assistant-toggle" className="assistant-toggle" aria-expanded={assistantOpen} aria-controls="ipo-assistant" onClick={() => setAssistantOpen(!assistantOpen)}>{assistantOpen ? 'Close assistant ×' : '✧ IPO assistant'}</button></div>;
 }
 export default App;
