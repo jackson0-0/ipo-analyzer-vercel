@@ -7,7 +7,8 @@ import worker,{calendar} from './worker.js';
 function env() {
  const db=new DatabaseSync(':memory:'); db.exec(readFileSync(new URL('./migrations/0001_initial.sql',import.meta.url),'utf8'));
  db.exec(readFileSync(new URL('./migrations/0002_background_research.sql',import.meta.url),'utf8'));
- return {DB:{prepare(sql){return {all:async()=>({results:db.prepare(sql).all()}),bind(...args){return {all:async()=>({results:db.prepare(sql).all(...args)}),first:async()=>db.prepare(sql).get(...args),run:async()=>db.prepare(sql).run(...args)}}}}},db};
+ db.exec(readFileSync(new URL('./migrations/0003_accounts_and_limits.sql',import.meta.url),'utf8'));
+ return {AI_DAILY_BUDGET_CENTS:'100',DB:{prepare(sql){return {all:async()=>({results:db.prepare(sql).all()}),bind(...args){return {all:async()=>({results:db.prepare(sql).all(...args)}),first:async()=>db.prepare(sql).get(...args),run:async()=>db.prepare(sql).run(...args)}}}}},db};
 }
 test('Names normalize suffixes without fuzzy matching',()=>{
  assert.equal(normalizeName('Example, Inc.'),'example'); assert.notEqual(normalizeName('Example One'),normalizeName('Example Two'));
@@ -139,4 +140,23 @@ test('Hourly cleanup preserves recent expired quote snapshots',async()=>{
  for(const [key,expiry] of [['quote-v2:recent',Date.now()-600000],['quote-v2:old',Date.now()-172800000],['other',Date.now()-600000]])e.db.prepare('INSERT INTO worker_cache VALUES (?,?,?)').run(key,'{}',expiry);
  globalThis.fetch=async()=>Response.json({data:{}});
  try{await worker.scheduled({cron:'0 * * * *',scheduledTime:Date.now()},e);assert.deepEqual(e.db.prepare('SELECT key FROM worker_cache').all().map(r=>r.key),['quote-v2:recent']);}finally{globalThis.fetch=original;}
+});
+test('Global AI reservation is atomic and fails closed without a budget',async()=>{
+ const {reserveAI,recordAI}=await import('./controls.js');const e=env();
+ const body={model:'claude-haiku-4-5-20251001',max_tokens:4000,messages:[{role:'user',content:'evidence'}]};
+ await assert.rejects(()=>reserveAI({...e,AI_DAILY_BUDGET_CENTS:'0'},body),/paused/);
+ const results=await Promise.allSettled(Array.from({length:50},()=>reserveAI(e,body)));
+ assert.ok(results.some(r=>r.status==='rejected'));
+ const total=e.db.prepare('SELECT * FROM ai_daily_usage').get();assert.ok(total.reserved_micros<=1000000);
+ const reservation=results.find(r=>r.status==='fulfilled').value;
+ await recordAI(e,reservation,{input_tokens:100,output_tokens:20});
+ assert.equal(e.db.prepare('SELECT actual_micros AS n FROM ai_daily_usage').get().n,200);
+});
+test('Structured research rejects nonexistent passage references',()=>{
+ const input={score:null,summary:'S',red_flag:'R',about:'A',limitations:'L',score_reason:'Reason',highlights:[],risks:[],gaps:['Gap'],evidence_ids:[1],sections:{valuation:[{text:'Valuation fact',evidence_ids:[2]}],dilution:[],use_of_proceeds:[]}};
+ assert.throws(()=>validateJudgment(input,['Evidence']),/section evidence/);
+ input.sections.valuation[0].evidence_ids=[1];assert.deepEqual(validateJudgment(input,['Evidence']).sections.valuation[0].evidence,['Evidence']);
+});
+test('Removed account and watchlist endpoints are unavailable',async()=>{
+ const e=env();for(const path of ['/api/auth/session','/api/watchlist'])assert.equal((await worker.fetch(new Request('https://example.com'+path),e)).status,404);
 });

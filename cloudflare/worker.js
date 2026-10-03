@@ -1,3 +1,4 @@
+import {reserveAI,recordAI,dailyBudget,clientLimit} from './controls.js';
 import {historyRows,priceChanges} from './prices.js';
 import prompt from './prompt.json' with {type:'json'};
 import {normalizeName, excerpts, selectFiling, extractFacts, passagesFor, validateJudgment, judgmentSchema} from './core.js';
@@ -116,7 +117,7 @@ export async function analyze(env,company,ticker,amount,status,background=false)
   const {excerpts:unused,...source}=filing;
   const inputs={company,ticker,offer_amount:amount,status,filing:source,reported_facts,passages:passages.map((text,i)=>({id:i+1,text}))};
   const payload=JSON.stringify({...inputs,as_of:now().slice(0,10)});
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('cf-sec-v11-stable-evidence:'+JSON.stringify(inputs)));
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('cf-sec-v12-structured-evidence:'+JSON.stringify(inputs)));
   const key=[...new Uint8Array(digest)].map(n=>n.toString(16).padStart(2,'0')).join('');
   const hit=await one(env,'SELECT response FROM sec_analysis WHERE cache_key=?',key); if(hit) { const result=JSON.parse(hit.response); await indexAnalysis(env,requestKey,result); return result; }
   // A database lease prevents simultaneous clicks from paying for duplicate analyses.
@@ -131,13 +132,16 @@ export async function analyze(env,company,ticker,amount,status,background=false)
   }
   try {
     if(background&&!await reserveResearchBudget(env)) throw new Error('Background daily limit reached');
-    const response=JSON.parse(await checkedFetch('https://api.anthropic.com/v1/messages',{method:'POST',timeout:120000,headers:{'Content-Type':'application/json','x-api-key':env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4000,tools:[{name:'submit_judgment',description:'Submit the filing-based assessment.',input_schema:judgmentSchema}],tool_choice:{type:'tool',name:'submit_judgment'},system:prompt,messages:[{role:'user',content:payload}]})}));
+    const body={model:'claude-haiku-4-5-20251001',max_tokens:4000,tools:[{name:'submit_judgment',description:'Submit the filing-based assessment.',input_schema:judgmentSchema}],tool_choice:{type:'tool',name:'submit_judgment'},system:prompt,messages:[{role:'user',content:payload}]};
+    const reservation=await reserveAI(env,body);
+    const response=JSON.parse(await checkedFetch('https://api.anthropic.com/v1/messages',{method:'POST',timeout:120000,headers:{'Content-Type':'application/json','x-api-key':env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},body:JSON.stringify(body)}));
+    await recordAI(env,reservation,response.usage);
     const input=response.content?.find(b=>b.type==='tool_use'&&b.name==='submit_judgment')?.input;
     const result={...validateJudgment(input,passages),reported_facts,sec:source};
     await run(env,'INSERT OR IGNORE INTO sec_analysis VALUES (?,?)',key,JSON.stringify(result));
     await indexAnalysis(env,requestKey,result);
     return result;
-  } catch(error) { if(error.message==='Background daily limit reached')throw error; throw new Error('Could not produce a verified filing analysis. Please retry.'); }
+  } catch(error) { if(error.status||error.message==='Background daily limit reached')throw error; throw new Error('Could not produce a verified filing analysis. Please retry.'); }
   finally { await run(env,'DELETE FROM worker_cache WHERE key=?',lock); }
 }
 export function parseQuote(data,ticker,company){
@@ -195,7 +199,7 @@ export async function refreshBackground(env){
     const available=result.sec?.status==='available';
     await run(env,'UPDATE research_jobs SET next_at=?,status=? WHERE key=?',Date.now()+(available?86400000:21600000),available?'ready':'source_unavailable',key);
   }catch(error){
-    const capped=error.message==='Background daily limit reached';
+    const capped=error.status===429||error.message==='Background daily limit reached';
     const retry=capped?Date.parse(now().slice(0,10))+86400000:Date.now()+3600000;
     await run(env,'UPDATE research_jobs SET next_at=?,status=? WHERE key=?',retry,capped?'daily_limit':'retry',key);
     console.warn('Background research',capped?'daily_limit':'retry');
@@ -207,6 +211,7 @@ export default {
     if(!path.startsWith('/api/')) return env.ASSETS.fetch(request);
     if(request.method!=='GET') return json({detail:'Method not allowed'},405);
     try {
+      if(path==='/api/usage') { const row=await one(env,'SELECT * FROM ai_daily_usage WHERE day=?',now().slice(0,10));return json({day:now().slice(0,10),budget_usd:dailyBudget(env)/1000000,recorded_cost_usd:(row?.actual_micros||0)/1000000,reserved_usd:(row?.reserved_micros||0)/1000000,attempts:row?.attempts||0}); }
       if(path==='/api/health') { await one(env,'SELECT 1 AS ok'); return json({status:'ok',hosting:'Cloudflare Workers',database:'D1'}); }
       if(path==='/api/calendar'||path==='/api/ipos') {
         const month=url.searchParams.get('month')||now().slice(0,7);
@@ -244,11 +249,15 @@ export default {
         const args=['ticker','amount','status'].map(k=>url.searchParams.get(k)||'');
         const saved=await one(env,'SELECT * FROM analysis_index WHERE key=?',researchKey(company,...args));
         if(saved){const result=JSON.parse(saved.response); if(result.sec?.status==='available'||Date.now()-Date.parse(saved.checked_at)<21600000)return json({...result,analysis_updated_at:saved.updated_at,analysis_checked_at:saved.checked_at});}
+        await clientLimit(env,request,'new-research',3,3600);
+        const known=await env.DB.prepare('SELECT response FROM calendar_snapshots ORDER BY month DESC LIMIT 12').all();
+        if(!known.results.some(row=>JSON.parse(row.response).some(ipo=>ipo.name===company&&ipo.ticker===args[0]&&(ipo.amount||'')===args[1]&&ipo.status===args[2])))return json({detail:'Select a company from the IPO calendar to request research.'},422);
         return json(await analyze(env,company,...args));
       }
       return json({detail:'Not found'},404);
     } catch(error) {
       console.error('API request failed',path.split('/')[2],error.name);
+      if(error.status)return json({detail:error.message},error.status);
       const message=/^(IPO calendar|Could not produce|Analysis is still)/.test(error.message)?error.message:'This request is temporarily unavailable. Please retry.';
       return json({detail:message},502);
     }
@@ -260,6 +269,7 @@ export default {
       const month=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-offset,1)).toISOString().slice(0,7);
       try { const result=await calendar(env,month,true); if(result.refresh_failed) console.warn('Calendar refresh failed',month); } catch { console.warn('Calendar refresh failed',month); }
     }
+    for(const table of ['app_limits'])await run(env,`DELETE FROM ${table} WHERE expires_at<?`,Date.now());
     // Keep price snapshots for a day so stale-while-refresh survives hourly cleanup.
     await run(env,"DELETE FROM worker_cache WHERE expires_at<? AND (key NOT LIKE 'quote-v2:%' OR expires_at<?)",Date.now(),Date.now()-86400000);
   },

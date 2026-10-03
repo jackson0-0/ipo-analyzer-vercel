@@ -26,7 +26,7 @@ The initial migration copied all 62 existing PostgreSQL records: 7 legacy analys
 
 The Worker uses a new analysis cache namespace because its text parsing and serialization differ from Python. Existing research is preserved in D1, but an analysis may regenerate once on the new runtime. Repeated requests for identical evidence, IPO details reuse the saved result; changed evidence can regenerate it. A database lease prevents concurrent duplicate AI requests.
 
-Watchlists live in browser localStorage, not PostgreSQL/D1. They remain on the old origin and do not automatically transfer to a different hostname.
+Watchlists and accounts have been removed. Legacy localStorage data is not used.
 
 Future deployments use the command above; automatic GitHub deployment is not configured. The Vercel hostname belongs to Vercel and cannot be served directly by Cloudflare. Use the Cloudflare URL or add an owned custom domain.
 
@@ -45,3 +45,13 @@ The offer price comes from the calendar's `proposedSharePrice` field; it is not 
 Nasdaq website endpoints are not a guaranteed free redistribution license or supported public API. Confirm permitted market-data usage before a public/commercial launch; the data adapter should be replaced with an appropriately licensed feed if required.
 
 The research view shows the company overview, SEC industry classification, positives, risks, structured financials, and information gaps without disclosure clicks. Only the verbatim supporting excerpts are collapsible. Structured facts still cover a limited set of standard US-GAAP concepts and may be missing even when the full filing contains financial statements.
+
+## App-wide AI controls and research sections
+
+`AI_DAILY_BUDGET_CENTS=100` sets a $1 UTC-day budget for this Worker across interactive and scheduled model calls. Unset or zero pauses new AI calls; cached reports remain available. Each fixed, text-only Haiku 4.5 request atomically reserves a conservative cost from UTF-8 input bytes plus format overhead and its 4,000 maximum output tokens. Rates are $1/M input and $5/M output, verified 2026-10-03. Successful responses reconcile against provider token usage; failed/unknown calls retain their reservation. Review pricing before changing models or tools. This application guard does not cover previous usage, taxes, other deployments/apps, or changes in provider pricing. `/api/usage` reports this deployment's recorded usage and reservations since the feature was enabled; it cannot read Claude subscription usage or Anthropic's account balance.
+
+The ten-attempt background limit also remains. New interactive research is limited to three requests per IP per hour and must match a saved calendar entry. Cached reports bypass this generation limit. A shared network shares the IP limit.
+
+New research includes valuation, ownership/dilution, and use of proceeds with validated passage references. Existing reports are preserved and gain these fields on their next background refresh rather than triggering paid regeneration on every click.
+
+Accounts, email sign-in, and watchlists were removed at the user's request. No account routes or email service are enabled. Migration 0003 was already applied during implementation and is retained as database history; its unused account tables have no active code paths. Older browser watchlist storage is no longer read or modified.

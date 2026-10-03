@@ -8,6 +8,6 @@
   "assets": {"directory": "../frontend/dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"]},
   "d1_databases": [{"binding":"DB","database_name":"ipo-analyzer","database_id":"add01ca5-dcd2-4b16-a8d4-4c4cef86f878","migrations_dir":"migrations"}],
   "triggers": {"crons": ["0 * * * *", "*/5 * * * *"]},
-  "vars": {"BACKGROUND_DAILY_LIMIT":"10"},
+  "vars": {"BACKGROUND_DAILY_LIMIT":"10", "AI_DAILY_BUDGET_CENTS":"100"},
   "observability": {"enabled": true}
 }

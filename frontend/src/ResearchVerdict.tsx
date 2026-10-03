@@ -27,6 +27,11 @@ export default function ResearchVerdict({ analysis, source }: { analysis: Analys
       {facts.length ? facts.map((fact, i) => <div className="reported-fact" key={i}><div><strong>{fact.label}</strong><p>{fact.period_start ? `${fact.period_start} to ${fact.period_end}` : `As of ${fact.period_end}`}</p></div><div><strong>{fact.value.toLocaleString()} {fact.unit}</strong>{source && <p><a href={source} target="_blank" rel="noopener noreferrer">SEC source ↗</a></p>}</div></div>) : <p>No verified financial figures are available in the structured data for this filing. This does not mean the company has no revenue or cash.</p>}
       {facts.length > 0 && <p className="limitations">Figures come from this filing’s standard SEC financial fields. Check the dates and units before comparing them.</p>}
     </section>
+    {(['valuation', 'dilution', 'use_of_proceeds'] as const).map(topic => <section className="research-section" key={topic}>
+      <h3>{{valuation:'Valuation',dilution:'Ownership & dilution',use_of_proceeds:'Use of IPO proceeds'}[topic]}</h3>
+      {analysis.sections?.[topic]?.length ? <ul className="analysis-bullets">{analysis.sections[topic].map((point,i)=><li key={i}>{point.text}<details><summary>Filing evidence</summary>{point.evidence.map((text,j)=><blockquote key={j}>{text}</blockquote>)}</details></li>)}</ul> : <p>{analysis.sections ? 'Not established by the filing excerpts reviewed.' : 'This saved report does not include this section yet. It will be added when background research next updates the report.'}</p>}
+      {source && <p className="limitations"><a href={source} target="_blank" rel="noopener noreferrer">SEC {analysis.sec?.form} · Filed {analysis.sec?.filed} ↗</a></p>}
+    </section>)}
     <section className="research-section"><h3>Information gaps</h3>
       {gaps.length > 0 && <ul className="analysis-bullets">{gaps.map((point, i) => <li key={i}>{point}</li>)}</ul>}
       {analysis.limitations && <p className="limitations">{analysis.limitations}</p>}

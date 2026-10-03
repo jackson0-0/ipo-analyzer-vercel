@@ -88,8 +88,22 @@ export function validateJudgment(input,passages) {
     if(!Array.isArray(points)||points.length<(key==='gaps'?1:0)||points.length>5||points.some(p=>typeof p!=='string')) throw new Error(`Invalid ${key}`);
     result[key]=points;
   }
+  if(input.sections!==undefined){
+    result.sections={};
+    for(const key of ['valuation','dilution','use_of_proceeds']){
+      const points=input.sections[key];
+      if(!Array.isArray(points)||points.length>3)throw new Error('Invalid research section');
+      result.sections[key]=points.map(point=>{
+        if(typeof point.text!=='string'||!point.text.trim()||point.text.length>600||!Array.isArray(point.evidence_ids)||!point.evidence_ids.length||point.evidence_ids.length>4||point.evidence_ids.some(i=>!Number.isInteger(i)||i<1||i>passages.length))throw new Error('Invalid section evidence');
+        return {text:point.text,evidence:point.evidence_ids.map(i=>passages[i-1])};
+      });
+    }
+  }
   const ids=input.evidence_ids;
   if(!Array.isArray(ids)||ids.length<1||ids.length>4||ids.some(i=>!Number.isInteger(i)||i<1||i>passages.length)) throw new Error('Unknown SEC passage');
   result.evidence=[...new Set(ids)].map(i=>passages[i-1]); return result;
 }
 export const judgmentSchema={type:'object',properties:{score:{anyOf:[{type:'integer',minimum:1,maximum:10},{type:'null'}]},...Object.fromEntries(['summary','red_flag','about','limitations','score_reason'].map(k=>[k,{type:'string'}])),...Object.fromEntries(['highlights','risks','gaps'].map(k=>[k,{type:'array',items:{type:'string'},minItems:k==='gaps'?1:0,maxItems:5}])),evidence_ids:{type:'array',items:{type:'integer'},minItems:1,maxItems:4}},required:['score','summary','red_flag','about','limitations','score_reason','highlights','risks','gaps','evidence_ids']};
+
+judgmentSchema.properties.sections={type:'object',additionalProperties:false,properties:Object.fromEntries(['valuation','dilution','use_of_proceeds'].map(key=>[key,{type:'array',maxItems:3,items:{type:'object',additionalProperties:false,properties:{text:{type:'string',maxLength:600},evidence_ids:{type:'array',items:{type:'integer'},minItems:1,maxItems:4}},required:['text','evidence_ids']}}])),required:['valuation','dilution','use_of_proceeds']};
+judgmentSchema.required.push('sections');
