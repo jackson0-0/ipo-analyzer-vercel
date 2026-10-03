@@ -10,3 +10,11 @@ export function heatClass(quote:Quote|undefined,period:Period){
   return `heat-${n>0?'up':'down'} heat-level-${Math.abs(n)>=20?3:Math.abs(n)>=5?2:1}`;
 }
 export function offerText(price?:string|null){return price&&price!=='N/A'?(/^\d+(?:\.\d+)?$/.test(price)?`$${price}`:price):'Not disclosed';}
+
+export function mergeQuotes(current: Record<string, Quote>, incoming: Record<string, Quote> = {}) {
+  const next = {...current};
+  for (const [key, quote] of Object.entries(incoming)) {
+    if (!current[key] || Date.parse(quote.fetched_at || '') >= Date.parse(current[key].fetched_at || '') || !current[key].fetched_at) next[key] = quote;
+  }
+  return next;
+}

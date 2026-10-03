@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import './App.css';
 import ResearchVerdict from './ResearchVerdict';
 import { QuoteLabel, PriceHistory } from './Prices';
-import { periods, changeFor, percentText, heatClass, offerText } from './price-format';
+import { periods, changeFor, percentText, heatClass, offerText, mergeQuotes } from './price-format';
 import type { Period, Quote } from './price-format';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -52,7 +52,7 @@ function App() {
     const controller = new AbortController();
     fetch(`${API_URL}/calendar?month=${activeMonth}`, { signal: controller.signal })
       .then(async res => { if (!res.ok) throw new Error(); const data = await res.json(); if (!Array.isArray(data.ipos)) throw new Error(); return data; })
-      .then(data => { if (!controller.signal.aborted) { calendarCache.current[activeMonth] = data; setQuotes(prev => ({...prev, ...data.quotes})); setIpos(data.ipos); setFreshness(data); } })
+      .then(data => { if (!controller.signal.aborted) { calendarCache.current[activeMonth] = data; setQuotes(prev => mergeQuotes(prev, data.quotes)); setIpos(data.ipos); setFreshness(data); } })
       .catch(() => { if (!controller.signal.aborted) setCalendarError('The IPO calendar is unavailable. Please try again.'); })
       .finally(() => { if (!controller.signal.aborted) setCalendarLoading(false); });
     return () => controller.abort();
@@ -94,7 +94,7 @@ function App() {
             const response = await fetch(`${API_URL}/quote/${encodeURIComponent(ipo.ticker)}?${params}`, {signal:controller.signal});
             if (!response.ok) throw new Error();
             const data: Quote = await response.json();
-            if (!controller.signal.aborted) setQuotes(prev => ({...prev, [key(ipo)]:data}));
+            if (!controller.signal.aborted) setQuotes(prev => mergeQuotes(prev, {[key(ipo)]:data}));
           } catch { if (!controller.signal.aborted) setQuotes(prev => ({...prev, [key(ipo)]:{status:'unavailable',price:null}})); }
         }
       }));
@@ -118,7 +118,7 @@ function App() {
     catch { setStorageError('Your browser could not save this watchlist. Changes will last only for this session.'); }
   }
   function changeMonth(index: number) {
-    if (index !== month) { const cached = calendarCache.current[monthKey(months[index])]; setMonth(index); if (cached?.quotes) setQuotes(prev => ({...prev, ...cached.quotes})); setFreshness(cached || null); setIpos(cached?.ipos || []); setCalendarLoading(!cached); setCalendarError(''); requestId.current++; setSelected(null); setAnalysis(null); setLoading(false); setAnalysisError(''); }
+    if (index !== month) { const cached = calendarCache.current[monthKey(months[index])]; setMonth(index); if (cached?.quotes) setQuotes(prev => mergeQuotes(prev, cached.quotes)); setFreshness(cached || null); setIpos(cached?.ipos || []); setCalendarLoading(!cached); setCalendarError(''); requestId.current++; setSelected(null); setAnalysis(null); setLoading(false); setAnalysisError(''); }
     setView('discover');
   }
   async function selectIPO(ipo: IPO) {
